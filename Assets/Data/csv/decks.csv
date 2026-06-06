@@ -1,0 +1,7 @@
+﻿deckName,cardId,copies
+StandardDeck,attack_basic,5
+StandardDeck,defend_basic,5
+StandardDeck,heal_basic,5
+StandardDeck,buff_basic,5
+StandardDeck,special_basic,9
+StandardDeck,ultimate_finale,1

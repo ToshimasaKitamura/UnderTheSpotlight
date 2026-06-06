@@ -1,0 +1,4 @@
+﻿enemyId,enemyDisplayName,partId,partDisplayName,zone,maxHp,effect,hintCue,hitboxCenterX,hitboxCenterY,hitboxSizeX,hitboxSizeY
+hamster,ハムスター,head,頭,Upper,3,WeakenNextAttack,「やめてやめて〜！頭は弱いの…！」と泣きそうな声でつぶやく(頭破壊で次の攻撃が弱まる),0.5,0.82,0.35,0.28
+hamster,ハムスター,arms,腕,Upper,3,PreventHeal,腕を背中に隠して「これがあれば回復できるんだから〜！」と挑発する(腕破壊で敵の自己回復を封じる),0.5,0.5,0.7,0.28
+hamster,ハムスター,legs,足,Lower,2,DisableMovement,「スーパージャンプをおみまいしてやるぞ!!」と足を踏み鳴らす(足破壊で移動を止められる),0.5,0.18,0.55,0.24

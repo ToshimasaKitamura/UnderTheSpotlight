@@ -72,3 +72,13 @@ UpgradeLog.htm
 
 # Backup folder
 [Bb]ackup/
+
+# Local editor / IDE settings
+.vscode/
+
+# Unity sprite preview temp folder
+Temp_SpritePreview/
+
+# Unity recovery dump
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta

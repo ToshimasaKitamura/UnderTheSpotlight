@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1d2c3b4a59687766554433221100ffe, type: 3}
+  m_Name: hamster
+  m_EditorClassIdentifier: 
+  id: hamster
+  displayName: "\u30CF\u30E0\u30B9\u30BF\u30FC"
+  parts:
+  - id: head
+    displayName: "\u982D"
+    maxHp: 3
+    zone: 0
+    destructionEffect: 1
+    hintCue: "\u300C\u3084\u3081\u3066\u3084\u3081\u3066\u301C\uFF01\u982D\u306F\u5F31\u3044\u306E\u2026\uFF01\u300D\u3068\u6CE3\u304D\u305D\u3046\u306A\u58F0\u3067\u3064\u3076\u3084\u304F(\u982D\u7834\u58CA\u3067\u6B21\u306E\u653B\u6483\u304C\u5F31\u307E\u308B)"
+    hitboxCenter: {x: 0.5, y: 0.82}
+    hitboxSize: {x: 0.35, y: 0.28}
+  - id: arms
+    displayName: "\u8155"
+    maxHp: 3
+    zone: 0
+    destructionEffect: 2
+    hintCue: "\u8155\u3092\u80CC\u4E2D\u306B\u96A0\u3057\u3066\u300C\u3053\u308C\u304C\u3042\u308C\u3070\u56DE\u5FA9\u3067\u304D\u308B\u3093\u3060\u304B\u3089\u301C\uFF01\u300D\u3068\u6311\u767A\u3059\u308B(\u8155\u7834\u58CA\u3067\u6575\u306E\u81EA\u5DF1\u56DE\u5FA9\u3092\u5C01\u3058\u308B)"
+    hitboxCenter: {x: 0.5, y: 0.5}
+    hitboxSize: {x: 0.7, y: 0.28}
+  - id: legs
+    displayName: "\u8DB3"
+    maxHp: 2
+    zone: 1
+    destructionEffect: 5
+    hintCue: "\u300C\u30B9\u30FC\u30D1\u30FC\u30B8\u30E3\u30F3\u30D7\u3092\u304A\u307F\u307E\u3044\u3057\u3066\u3084\u308B\u305E!!\u300D\u3068\u8DB3\u3092\u8E0F\u307F\u9CF4\u3089\u3059(\u8DB3\u7834\u58CA\u3067\u79FB\u52D5\u3092\u6B62\u3081\u3089\u308C\u308B)"
+    hitboxCenter: {x: 0.5, y: 0.18}
+    hitboxSize: {x: 0.55, y: 0.24}
+  icon: {fileID: 0}

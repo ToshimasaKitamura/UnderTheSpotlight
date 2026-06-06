@@ -1,0 +1,28 @@
+﻿key,value,description
+playerCount,4,プレイヤーは【○人】で戦う
+maxHp,5,全員で共有するHPは最大【○】
+drawCount,3,カード選択時、各プレイヤーは山札から【○枚】引く
+selectTimeLimit,15,カード選択は1人あたり【○秒】以内に行う
+randomizeTurnOrder,false,ターン順をランダム化するかどうか【true=ランダム / false=固定】
+roundsPerActionCommand,3,アクションコマンドフェーズでは【○回】ミニゲームを行う
+baseTimeLimit,4.5,ミニゲーム1回の基本制限時間は【○秒】
+timeLimitPerRound,-0.7,"ラウンドが進むごとに制限時間が【○秒】ずつ増減する(負の値で短くなって難しくなる)"
+speedRampPerRound,0.18,ラウンドが進むごとに進行速度が【○】ずつ加算される
+buttonCountBase,2,ミニゲームで要求される入力数の基本値は【○】
+difficultyToSpeed,0.03,"カードの難度合計1点につき、速度が【○】加算される"
+difficultyToInterfere,0.012,"カードの難度合計1点につき、視覚妨害が【○】加算される"
+minTimeLimit,1.6,ミニゲームの制限時間は最低でも【○秒】は確保する
+interRoundDelay,0.7,ラウンドとラウンドの間に【○秒】の小休止を挟む
+resultFlashDuration,0.9,成功/失敗の表示は【○秒】間出す
+playerTurnDuration,4,"弾幕中、1人のプレイヤーが操作する時間は【○秒】"
+playerColor_1,#FF5959,1Pの色 (#RRGGBB)
+playerColor_2,#5C99FF,2Pの色 (#RRGGBB)
+playerColor_3,#5CFF66,3Pの色 (#RRGGBB)
+playerColor_4,#FFD959,4Pの色 (#RRGGBB)
+playerCallout_1,1番さん出番ですッ！,1Pに切り替わったときのセリフ
+playerCallout_2,2番さん助けて〜！！,2Pに切り替わったときのセリフ
+playerCallout_3,3番さん任せたっ！,3Pに切り替わったときのセリフ
+playerCallout_4,4番さんお願いっ！,4Pに切り替わったときのセリフ
+moveStartXSpeed,5,ワザ開始時のX方向速度【○】で移動を開始する
+moveDeceleratePerFrame,0.2,"ワザ中、毎フレーム【○】ずつX方向に減速する"
+bombsPerPlayer,2,弾幕中に操作プレイヤー以外が使える援護ボムを各プレイヤー【○個】持って戦闘開始する

@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c3d4e5f67890a1b2c3d4e5f678901abc, type: 3}
+  m_Name: GameTuning
+  m_EditorClassIdentifier: 
+  customParams:
+  - key: moveStartXSpeed
+    value: 5
+    description: "\u30EF\u30B6\u958B\u59CB\u6642\u306EX\u65B9\u5411\u901F\u5EA6\u3010\u25CB\u3011\u3067\u79FB\u52D5\u3092\u958B\u59CB\u3059\u308B"
+  - key: moveDeceleratePerFrame
+    value: 0.2
+    description: "\u30EF\u30B6\u4E2D\u3001\u6BCE\u30D5\u30EC\u30FC\u30E0\u3010\u25CB\u3011\u305A\u3064X\u65B9\u5411\u306B\u6E1B\u901F\u3059\u308B"
+  - key: bombsPerPlayer
+    value: 2
+    description: "\u5F3E\u5E55\u4E2D\u306B\u64CD\u4F5C\u30D7\u30EC\u30A4\u30E4\u30FC\u4EE5\u5916\u304C\u4F7F\u3048\u308B\u63F4\u8B77\u30DC\u30E0\u3092\u5404\u30D7\u30EC\u30A4\u30E4\u30FC\u3010\u25CB\u500B\u3011\u6301\u3063\u3066\u6226\u95D8\u958B\u59CB\u3059\u308B"
+  playerCount: 4
+  maxHp: 5
+  playerColors:
+  - '#FF5959'
+  - '#5C99FF'
+  - '#5CFF66'
+  - '#FFD959'
+  playerCallouts:
+  - "1\u756A\u3055\u3093\u51FA\u756A\u3067\u3059\u30C3\uFF01"
+  - "2\u756A\u3055\u3093\u52A9\u3051\u3066\u301C\uFF01\uFF01"
+  - "3\u756A\u3055\u3093\u4EFB\u305B\u305F\u3063\uFF01"
+  - "4\u756A\u3055\u3093\u304A\u9858\u3044\u3063\uFF01"
+  drawCount: 3
+  selectTimeLimit: 15
+  randomizeTurnOrder: 0
+  roundsPerActionCommand: 3
+  baseTimeLimit: 4.5
+  timeLimitPerRound: -0.7
+  speedRampPerRound: 0.18
+  buttonCountBase: 2
+  difficultyToSpeed: 0.03
+  difficultyToInterfere: 0.012
+  minTimeLimit: 1.6
+  interRoundDelay: 0.7
+  resultFlashDuration: 0.9
+  playerTurnDuration: 4
