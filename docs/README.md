@@ -1,65 +1,55 @@
-# UnderTheSpotlight 設計仕様書 索引
+# ドキュメント構成
 
-戦闘内システム(下層)から、メタ進行(上層)まで。バイブコーディング時の参照用。
+このフォルダには、プロジェクトの仕様書とドキュメントが格納されています。
 
----
+## フォルダ構成
 
-## レイヤー俯瞰
+- **Specifications/** - 仕様書（実装の基準となる文書）
+  - ゲーム設計、システム仕様、データ構造など
+- **Design/** - 設計書（予定）
+  - クラス設計、アーキテクチャ設計など
+- **Reference/** - リファレンス（予定）
+  - API仕様、データフォーマットなど
 
-```
-┌────────────────────────────────────────────────────────┐
-│              ステージマップ(上位ループ)                       │
-│   - 経験値/ボムの獲得・蓄積                                  │
-│   - キャラレベルアップ → パッシブ・進化                       │
-│   - カード強化 (永続)                                      │
-└──────────────┬─────────────────────────────────────────┘
-               │ ステージ突入 / 戻り
-               ▼
-┌────────────────────────────────────────────────────────┐
-│              1戦闘 (BattleStateMachine)                  │
-│   CardSelect → PartSelect → ActionCommand → Dodge       │
-└────────────────────────────────────────────────────────┘
-```
+## 重要な原則
 
----
+### 仕様書の位置づけ
+1. **仕様書が真実** - コードと仕様が矛盾する場合、仕様書を基準とする
+2. **実装前に読む** - 新機能開発時は必ず関連仕様を確認
+3. **実装後に照合** - 作業完了後、仕様と実装の整合性を確認
+4. **ずれを検出したら更新** - 仕様書または実装を修正し、同期を保つ
 
-## 仕様書一覧
+### AI開発時のルール
+Claude Codeが開発を行う際は、以下の手順を遵守：
+1. **タスク開始時** - Docs/Specifications/ 内の関連仕様を読み取る
+2. **実装中** - 仕様に従って開発を進める
+3. **完了時** - 実装が仕様通りか照合する
+4. **ずれ検出時** - ユーザーに報告し、どちらを修正すべきか確認
 
-### 上位レイヤー(メタ進行)
-- [StageMap_Design.md](StageMap_Design.md) — ステージマップ / 連戦 / 報酬 / 解放
-- [CharacterPassive_Design.md](CharacterPassive_Design.md) — キャラレベル / パッシブ / 進化
-- [CardMetaUpgrade_Design.md](CardMetaUpgrade_Design.md) — 永続カード強化 + テキスト変化
+## 現在のドキュメント
 
-### 戦闘内システム
-- [CardSystem_Design.md](CardSystem_Design.md) — カード/デッキ/CardSelect フェーズ
-- [PartDestruction_Design.md](PartDestruction_Design.md) — 部位破壊 / 部位選択 / 予告セリフ
-- [ActionCommand_Design.md](ActionCommand_Design.md) — グループ式ミニゲーム / 即時命中演出
-- [DodgePhase_Design.md](DodgePhase_Design.md) — 弾幕回避 / ボス挙動 / プレイヤー操作交代
-- [Bomb_Design.md](Bomb_Design.md) — 援護ボム
+### Specifications/ - 仕様書（実装の基準）
+- [GAME_SPECIFICATION.md](Specifications/GAME_SPECIFICATION.md) - ゲーム全体仕様（最優先）
+- [GAME_FLOW.md](Specifications/GAME_FLOW.md) - ゲームフロー、シーン遷移
+- [FOLDER_STRUCTURE.md](Specifications/FOLDER_STRUCTURE.md) - プロジェクトフォルダ構成
 
-### ツール・運用
-- [CsvWorkflow.md](CsvWorkflow.md) — Excel/CSV ⇔ ScriptableObject 連動
+### Design/ - 設計書（個別システムの詳細設計）
+- [ActionCommand_Design.md](Design/ActionCommand_Design.md) - アクションコマンド設計
+- [Bomb_Design.md](Design/Bomb_Design.md) - ボムシステム設計
+- [CardMetaUpgrade_Design.md](Design/CardMetaUpgrade_Design.md) - カード強化設計
+- [CardSystem_Design.md](Design/CardSystem_Design.md) - カードシステム設計
+- [CharacterPassive_Design.md](Design/CharacterPassive_Design.md) - キャラクターパッシブ設計
+- [CsvWorkflow.md](Design/CsvWorkflow.md) - CSVインポートワークフロー
+- [DodgePhase_Design.md](Design/DodgePhase_Design.md) - 回避フェーズ設計
+- [PartDestruction_Design.md](Design/PartDestruction_Design.md) - 部位破壊システム設計
+- [StageMap_Design.md](Design/StageMap_Design.md) - ステージマップ設計
 
----
+### Root/ - プロジェクト全体
+- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) - 開発ガイドライン（必読）
+- [README.md](README.md) - このファイル
 
-## 実装ステータス(2026-06-01 時点)
+## 今後追加予定のドキュメント
 
-| レイヤー | 範囲 | 状態 |
-|---|---|---|
-| 戦闘内: CardSelect | ホットシート 4人選択 | ✅ |
-| 戦闘内: PartSelect | 既存 Enemy にヒットボックス枠オーバーレイ | ✅ |
-| 戦闘内: ActionCommand | グループ式ボタン押し + 即時命中演出 | ✅ |
-| 戦闘内: Dodge | 弾幕 + 部位破壊効果 (WeakenNextAttack/DisableMovement) | ✅ Step B |
-| 戦闘内: 予告セリフ | Dodge 開始前にでかい敵で 2.5 秒 | ✅ |
-| メタ: ステージマップ | 仕様書のみ | 📝 設計済 |
-| メタ: キャラレベル/パッシブ | 仕様書のみ | 📝 設計済 |
-| メタ: カードメタ強化 | 仕様書のみ | 📝 設計済 |
-
----
-
-## 設計原則(共通)
-
-- **数値はコードにハードコードしない**。GameTuning / CSV / Inspector で管理
-- **メタ進行はセーブ対象、戦闘進行は揮発**(原則)
-- **新規キャラ/能力/カードは「定義 → CSV → ロード」の流れ**で追加できるよう一貫させる
-- **既存のキャラ/敵を流用**(プロシージャル描画で代用しない)
+- **Specifications/BATTLE_SPECIFICATION.md** - バトルシステム詳細仕様
+- **Specifications/UI_SPECIFICATION.md** - UI/UX仕様
+- **Specifications/TUNING_SPECIFICATION.md** - ゲームバランス調整値
