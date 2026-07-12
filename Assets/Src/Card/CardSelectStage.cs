@@ -44,6 +44,14 @@ public class CardSelectStage : MonoBehaviour
     [Tooltip("スポットライト演出を無効化する")]
     public bool disableSpotlight = true;
 
+    [Header("グレースケール")]
+    [Tooltip("非アクティブキャラを脱色する量(0=元色,1=完全グレー)。")]
+    [Range(0f, 1f)]
+    public float grayAmount = 1f;
+
+    private const string GrayShaderName = "Custom/SpriteGrayscale";
+    private Material grayMaterial;
+
     private readonly List<Target> targets = new List<Target>();
     private GameObject backdrop;
     private SpriteRenderer backdropSr;
@@ -65,7 +73,12 @@ public class CardSelectStage : MonoBehaviour
                 if (t == null) continue;
                 var srs = t.GetComponentsInChildren<SpriteRenderer>(true);
                 var baseColors = new Color[srs.Length];
-                for (int i = 0; i < srs.Length; i++) baseColors[i] = srs[i] != null ? srs[i].color : Color.white;
+                var baseMaterials = new Material[srs.Length];
+                for (int i = 0; i < srs.Length; i++)
+                {
+                    baseColors[i] = srs[i] != null ? srs[i].color : Color.white;
+                    baseMaterials[i] = srs[i] != null ? srs[i].sharedMaterial : null;
+                }
                 targets.Add(new Target
                 {
                     tr = t,
@@ -73,6 +86,7 @@ public class CardSelectStage : MonoBehaviour
                     baseScale = t.localScale,
                     srs = srs,
                     baseColors = baseColors,
+                    baseMaterials = baseMaterials,
                 });
             }
         }
@@ -86,8 +100,40 @@ public class CardSelectStage : MonoBehaviour
             camSaved = true;
         }
 
+        EnsureGrayMaterial();
         BuildBackdrop();
         BuildSpotlight();
+    }
+
+    /// <summary>
+    /// 脱色用マテリアルを用意する。シェーダーが無ければ明確にエラーを出す。
+    /// </summary>
+    private void EnsureGrayMaterial()
+    {
+        if (grayMaterial != null) return;
+
+        var sh = Shader.Find(GrayShaderName);
+        if (sh == null)
+        {
+            Debug.LogError($"[CardSelectStage] シェーダー '{GrayShaderName}' が見つかりません。SpriteGrayscale.shader が Assets 内にあるか確認してください。");
+            return;
+        }
+        grayMaterial = new Material(sh);
+        grayMaterial.SetFloat("_GrayAmount", grayAmount);
+    }
+
+    /// <summary>
+    /// 対象キャラの SpriteRenderer をグレースケール表示/通常表示に切り替える。
+    /// </summary>
+    private void ApplyGrayscale(Target tg, bool gray)
+    {
+        bool useGray = gray && grayMaterial != null;
+        for (int i = 0; i < tg.srs.Length; i++)
+        {
+            var sr = tg.srs[i];
+            if (sr == null) continue;
+            sr.sharedMaterial = useGray ? grayMaterial : tg.baseMaterials[i];
+        }
     }
 
     private void BuildBackdrop()
@@ -163,6 +209,8 @@ public class CardSelectStage : MonoBehaviour
         {
             fromScale[i] = targets[i].tr != null ? targets[i].tr.localScale : Vector3.one;
             toScale[i] = targets[i].baseScale * (i == index ? focusScaleMul : 1f);
+            // アクティブキャラは通常表示、それ以外はグレースケールで目立たなくする
+            ApplyGrayscale(targets[i], i != index);
         }
 
         float t = 0f;
@@ -274,7 +322,12 @@ public class CardSelectStage : MonoBehaviour
             tg.tr.position = tg.basePos;
             tg.tr.localScale = tg.baseScale;
             for (int i = 0; i < tg.srs.Length; i++)
-                if (tg.srs[i] != null) tg.srs[i].color = tg.baseColors[i];
+            {
+                if (tg.srs[i] == null) continue;
+                tg.srs[i].color = tg.baseColors[i];
+                // グレースケール用マテリアルを元に戻す
+                tg.srs[i].sharedMaterial = tg.baseMaterials[i];
+            }
         }
         if (targetCamera != null && camSaved)
         {
@@ -283,6 +336,11 @@ public class CardSelectStage : MonoBehaviour
         }
         if (backdrop != null) Destroy(backdrop);
         if (spotlight != null) Destroy(spotlight);
+        if (grayMaterial != null)
+        {
+            Destroy(grayMaterial);
+            grayMaterial = null;
+        }
     }
 
     private static void ApplyTint(Target tg, float mul)
@@ -342,5 +400,6 @@ public class CardSelectStage : MonoBehaviour
         public Vector3 baseScale;
         public SpriteRenderer[] srs;
         public Color[] baseColors;
+        public Material[] baseMaterials;
     }
 }

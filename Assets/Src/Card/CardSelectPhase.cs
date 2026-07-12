@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 /// <summary>
 /// カード選択フェーズ(1画面ホットシート方式)。
@@ -45,14 +46,43 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     };
 
     [Header("演出設定")]
-    [Tooltip("フレーム集合アニメーション時間")]
-    [SerializeField] private float collapseAnimDuration = 0.4f;
-    [Tooltip("フレーム展開アニメーション時間")]
-    [SerializeField] private float expandAnimDuration = 0.5f;
     [Tooltip("カード登場アニメーション時間")]
     [SerializeField] private float cardEnterDuration = 0.3f;
     [Tooltip("カード登場間隔")]
     [SerializeField] private float cardEnterStagger = 0.1f;
+
+    // ===== ズーム/カード配置チューニング =====
+    // 注意: これらは意図的に [SerializeField] にしていない。
+    // シリアライズするとシーン保存値がコード変更より優先され、
+    // ドメインリロードをまたいで旧値が固着して初期値変更が反映されなくなるため、
+    // コードを唯一の真実として通常の private フィールドで持つ。
+
+    // カメラを各キャラへ寄せる/戻す秒数
+    private float zoomDuration = 0.6f;
+    // ズーム率。小さいほど大きく寄る(0.4で約2.5倍)
+    private float zoomFactor = 0.4f;
+    // 手番キャラの画面横位置(0=左端,1=右端)。左端まで寄せて右をカード用に空ける
+    private float activeScreenX = 0.16f;
+    // 手番キャラの画面縦位置(0=下,1=上)。小さいほど下に映る
+    private float activeScreenY = 0.42f;
+    // 手番キャラの追加拡大率(カメラズームに上乗せ)
+    private float focusScaleMul = 1.15f;
+    // 非手番キャラの暗転倍率(0=黒,1=元色)。キャラは消さず暗めにして手番を強調
+    private float dimMultiplier = 0.5f;
+
+    // カード列の中心の画面横位置
+    private float cardsCenterX = 0.66f;
+    // カード列の画面縦位置
+    private float cardsCenterY = 0.37f;
+    // カード間の画面横間隔(ビューポート比)。カード幅より小さいと重なる
+    private float cardSpacingViewport = 0.22f;
+    // カード高さの画面縦比率
+    private float cardHeightViewport = 0.5f;
+
+    // カーソル移動速度(ビューポート/秒)
+    private float cursorSpeed = 0.7f;
+    // カーソルの大きさ(Canvas基準ピクセル。CanvasScaler 1920x1080 基準)
+    private float cursorPixelSize = 80f;
 
     /// <summary>確定済み選択(playerIndex → CardInstance)。未選択は null。</summary>
     public IReadOnlyList<CardInstance> Selections => selections;
@@ -77,6 +107,25 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     private GameObject[] cardObjects;
     private int selectedCardIndex = -1;
     private Color[][] cardOriginalColors;  // 各カードのオリジナル色を保持
+    private float baseCardScale = 1f;      // カメラズームに合わせたカードの基準スケール
+
+    // 舞台演出(カメラズーム/キャラ強調)
+    private CardSelectStage stage;
+
+    // 4Pカーソル(マウスポインタ) — Screen Space Overlay の UI として描画し、
+    // ゲームカメラのズーム・画面遷移の影響を受けないようにする。残像(フェード)付き。
+    private GameObject cursorCanvasObj;      // オーバーレイCanvas
+    private GameObject[] playerCursors;      // 各カーソル本体(Image) 長さ4
+    private Image[][] cursorGhosts;          // 各カーソルの残像Image
+    private Vector2[] cursorViewportPos;     // 各カーソルのビューポート座標(0..1)
+    private Vector2[][] cursorHistory;       // 残像用の位置履歴(index0 が最新)
+
+    private const int GhostCount = 4;        // 残像の枚数
+    private const int GhostStride = 2;       // 残像同士のフレーム間隔
+    private const int HistoryLen = GhostCount * GhostStride + 1;
+    private const float GhostMaxAlpha = 0.55f;
+    // ポインタ先端(左上)をアンカー点にする pivot
+    private static readonly Vector2 CursorTipPivot = new Vector2(0.125f, 0.9375f);
 
     // 選択されたカード表示用
     private GameObject[] selectedCardObjects;
@@ -137,6 +186,12 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             return;
         }
 
+        if (Camera.main == null)
+        {
+            UnityEngine.Debug.LogError("[CardSelectPhase] Camera.main が見つかりません！MainCamera タグを設定してください。");
+            return;
+        }
+
         int n = Mathf.Max(1, playerCount);
         selections = new CardInstance[n];
         turnOrder = BuildTurnOrder(n);
@@ -161,6 +216,13 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         }
 
         DestroyAllCards();
+        DestroyCursors();
+
+        // カメラ/キャラの強調演出を復帰(途中中断時のフェイルセーフ)
+        if (stage != null)
+        {
+            stage.Restore();
+        }
 
         // プレイヤーの表示状態を復元
         RestoreAllPlayersVisibility();
@@ -180,34 +242,26 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     /// </summary>
     private IEnumerator CardSelectSequence()
     {
-        // カード選択フェーズ開始時に元の位置を保存
+        // カード選択フェーズ開始時に元の位置・表示状態を保存
         SaveOriginalCharacterPositions();
 
-        // 最初に全フレームを左に集合（キャラクターも一緒に）
-        yield return StartCoroutine(frameUI.CollapseAllFramesToLeft(collapseAnimDuration, playerTransforms));
+        // 舞台演出(カメラズーム/キャラ強調)を準備
+        SetupStage();
+
+        // 4P分のカーソル(マジシャンアイコン)を生成
+        CreateCursors();
+
+        // カード選択中は味方フレームを隠し、キャラ本人のみを見せる
+        frameUI.HideAllyFramesOnly();
 
         // 各プレイヤーのターンを処理
         for (turnIndex = 0; turnIndex < turnOrder.Length; turnIndex++)
         {
             activePlayer = turnOrder[turnIndex];
 
-            // 対象キャラクターを画面外左に配置してから表示
-            Transform charTransform = GetPlayerTransform(activePlayer);
-            if (charTransform != null)
-            {
-                // まず画面外左に配置（CollapseAllFramesToLeftの目標位置と同じ）
-                charTransform.position = frameUI.GetCollapseTargetPosition();
-            }
-            // 位置を設定してから1フレーム待ってから表示
-            yield return null;
-            ShowOnlyActivePlayer(activePlayer);
-
-            // フレームを展開（キャラクターも一緒に移動）
-            yield return StartCoroutine(frameUI.ExpandForCardSelect(activePlayer, expandAnimDuration, charTransform));
-
-            // スポットライト演出を開始
-            Vector3 spotlightPos = frameUI.GetAllyFrameCenter(0); // 左端フレーム
-            frameUI.ShowSpotlight(spotlightPos, 1.2f);
+            // キャラは消さず全員表示のまま、カメラを手番キャラへズームイン
+            // (手番キャラは画面左に大きく寄り、他キャラは暗転で強調される)
+            yield return stage.FocusPlayer(activePlayer);
 
             // カードをドロー
             var deck = partyDeck.GetDeck(activePlayer);
@@ -225,12 +279,12 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             }
             currentHand = new List<CardInstance>(drawn);
 
-            // カードを右3つのスロットに配置
+            // カードをズーム後カメラの画面右へ生成
             yield return StartCoroutine(SpawnCardsAnimation(currentHand));
 
-            // 選択待機
+            // 選択待機。カーソルはプレイヤーが自由に動かすので、ここでは位置を動かさない
             selectedCardIndex = -1;
-            cursorIndex = 0;
+            cursorIndex = -1;   // ホバーで決まるため初期は未選択
             UpdateCardHighlights();
             turnActive = true;
             timeLeft = selectTimeLimit;
@@ -240,13 +294,13 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             // 選択が完了するまで待機
             while (selectedCardIndex < 0)
             {
-                // タイムアウト処理
+                // タイムアウト処理(ホバー中ならそのカード、無ければ先頭)
                 if (selectTimeLimit > 0f)
                 {
                     timeLeft -= Time.deltaTime;
                     if (timeLeft <= 0f)
                     {
-                        selectedCardIndex = cursorIndex;
+                        selectedCardIndex = (cursorIndex >= 0) ? cursorIndex : 0;
                     }
                 }
                 yield return null;
@@ -262,87 +316,449 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             }
             partyDeck.GetDeck(activePlayer)?.DiscardHand();
 
-            // カード退場アニメーション（選択カードは下へ、他は左へ）
-            // キャラクターとフレームも一緒に左へ退場
-            Transform charTransformExit = GetPlayerTransform(activePlayer);
-            StartCoroutine(frameUI.CollapseFrameWithCharacter(activePlayer, 0.35f, charTransformExit));
+            // カード退場(キャラの拡大リアクションは行わない)
             yield return StartCoroutine(AnimateCardsExit(selectedCardIndex));
 
-            // カードを消す
+            // カードを消す(キャラは消さない。次の手番でカメラが移動して強調が切り替わる)
             DestroyAllCards();
-
-            // スポットライト演出を終了
-            frameUI.HideSpotlight();
-
-            // キャラクターを非表示に（位置は戻さない、画面外にいるので）
-            HidePlayer(activePlayer);
-
-            // 次のプレイヤーがいる場合は再び左に集合
-            if (turnIndex < turnOrder.Length - 1)
-            {
-                yield return StartCoroutine(frameUI.CollapseAllFramesToLeft(collapseAnimDuration, null));
-            }
         }
 
-        // 全員完了後、選ばれたカード4枚を下から表示する演出
+        // カーソルはフェーズ終了(Exit)まで残す。どの画面状態でも常に動かせるようにするため、
+        // 最終演出(下からカード)中も表示・操作可能にしておく。
+
+        // カメラを元に戻す。この後カードが下から出るので、キャラは画面に残さず全員非表示にする
+        // (ShowSelectedCardsFromBottom の最後で RestoreAllPlayersVisibility により復帰する)
+        HideAllPlayers();
+        stage.Restore();
         yield return StartCoroutine(ShowSelectedCardsFromBottom());
 
         // 次のフェーズへ
         FinishSelection();
     }
 
+    /// <summary>
+    /// カメラズーム/キャラ強調用の CardSelectStage を用意・設定する。
+    /// </summary>
+    private void SetupStage()
+    {
+        if (stage == null) stage = GetComponent<CardSelectStage>();
+        if (stage == null) stage = gameObject.AddComponent<CardSelectStage>();
+
+        stage.targetCamera = Camera.main;
+        stage.zoomFactor = zoomFactor;
+        stage.activeScreenX = activeScreenX;
+        stage.activeScreenY = activeScreenY;
+        stage.cameraMoveDuration = zoomDuration;
+        stage.focusScaleMul = focusScaleMul;
+        stage.dimMultiplier = dimMultiplier;
+        // 暗幕/スポットライトは使わず、ズームとキャラ強調のみ行う
+        stage.disableSpotlight = true;
+
+        stage.Initialize(playerTransforms);
+    }
+
+    /// <summary>
+    /// 現在の(ズーム後)カメラ画面右に、count 枚のカードを並べるワールド座標を算出。
+    /// </summary>
+    private Vector3[] ComputeCardSlots(int count)
+    {
+        Camera cam = Camera.main;
+        var slots = new Vector3[count];
+        // 直交カメラでは深度は x/y に影響しないが、明示的に前方距離を渡す
+        float depth = Mathf.Abs(cam.transform.position.z);
+
+        for (int i = 0; i < count; i++)
+        {
+            float offset = (i - (count - 1) / 2f) * cardSpacingViewport;
+            float vx = Mathf.Clamp01(cardsCenterX + offset);
+            Vector3 w = cam.ViewportToWorldPoint(new Vector3(vx, cardsCenterY, depth));
+            w.z = 0f;
+            slots[i] = w;
+        }
+        return slots;
+    }
+
+    /// <summary>
+    /// 現在のカメラ倍率に対して、カード高さが cardHeightViewport になるスケールを算出。
+    /// スプライトの実寸から求めるため PPU に依存しない。
+    /// </summary>
+    private float ComputeCardScale(GameObject cardObj)
+    {
+        Camera cam = Camera.main;
+        var sr = cardObj.GetComponent<SpriteRenderer>();
+        float spriteWorldHeight = (sr != null && sr.sprite != null) ? sr.sprite.bounds.size.y : 1f;
+        if (spriteWorldHeight <= 0.0001f) spriteWorldHeight = 1f;
+
+        float desiredWorldHeight = cardHeightViewport * (cam.orthographicSize * 2f);
+        return desiredWorldHeight / spriteWorldHeight;
+    }
+
     public void Tick()
     {
-        if (!turnActive || isAnimating) return;
-
         var kb = Keyboard.current;
         if (kb == null) return;
 
-        // 左右でカーソル移動
-        if (kb.leftArrowKey.wasPressedThisFrame || kb.aKey.wasPressedThisFrame)
-        {
-            MoveCursor(-1);
-        }
-        else if (kb.rightArrowKey.wasPressedThisFrame || kb.dKey.wasPressedThisFrame)
-        {
-            MoveCursor(+1);
-        }
-        // 確定
-        else if (kb.enterKey.wasPressedThisFrame
-              || kb.numpadEnterKey.wasPressedThisFrame
-              || kb.spaceKey.wasPressedThisFrame
-              || kb.zKey.wasPressedThisFrame)
-        {
-            ConfirmSelection();
-        }
-    }
+        // カーソルは画面がどんな状態でも常に動かせる
+        // (通常=手番Pのカーソル / デバッグ=数字キーを押した対象Pのカーソル)
+        UpdateCursors(kb);
 
-    private void MoveCursor(int delta)
-    {
-        if (currentHand == null || currentHand.Count == 0) return;
+        // カードの選択(ホバー判定・確定)は、選択受付中のみ行う
+        if (!turnActive || isAnimating) return;
 
-        cursorIndex += delta;
-        if (cursorIndex < 0) cursorIndex = currentHand.Count - 1;
-        if (cursorIndex >= currentHand.Count) cursorIndex = 0;
-
+        // 手番プレイヤーのカーソルが乗っているカードをホバー中とする
+        cursorIndex = GetActiveHoveredCard();
         UpdateCardHighlights();
+
+        // ホバー中のカードがあり、決定キーが押されたら確定
+        if (cursorIndex >= 0 && ConfirmPressed(kb))
+        {
+            selectedCardIndex = cursorIndex;
+        }
     }
 
-    private void ConfirmSelection()
+    /// <summary>
+    /// 決定キー(Enter/Space)が押されたか。
+    /// </summary>
+    private bool ConfirmPressed(Keyboard kb)
     {
-        selectedCardIndex = cursorIndex;
+        return kb.enterKey.wasPressedThisFrame
+            || kb.numpadEnterKey.wasPressedThisFrame
+            || kb.spaceKey.wasPressedThisFrame;
+    }
+
+    /// <summary>
+    /// カーソル移動処理。
+    /// 数字キー(1〜4)を押している間は対象Pのカーソルを、押していなければ手番Pのカーソルを、
+    /// 矢印/WASD で動かす。
+    /// </summary>
+    private void UpdateCursors(Keyboard kb)
+    {
+        if (playerCursors == null || cursorViewportPos == null) return;
+
+        Vector2 dir = Vector2.zero;
+        if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) dir.x -= 1f;
+        if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) dir.x += 1f;
+        if (kb.upArrowKey.isPressed || kb.wKey.isPressed) dir.y += 1f;
+        if (kb.downArrowKey.isPressed || kb.sKey.isPressed) dir.y -= 1f;
+        if (dir.sqrMagnitude > 1f) dir = dir.normalized;
+
+        bool[] holdP = new bool[4];
+        holdP[0] = kb.digit1Key.isPressed;
+        holdP[1] = kb.digit2Key.isPressed;
+        holdP[2] = kb.digit3Key.isPressed;
+        holdP[3] = kb.digit4Key.isPressed;
+        bool anyHeld = holdP[0] || holdP[1] || holdP[2] || holdP[3];
+
+        if (dir != Vector2.zero)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                bool move = anyHeld ? holdP[i] : (i == activePlayer);
+                if (!move) continue;
+                cursorViewportPos[i] += dir * cursorSpeed * Time.deltaTime;
+                cursorViewportPos[i].x = Mathf.Clamp01(cursorViewportPos[i].x);
+                cursorViewportPos[i].y = Mathf.Clamp01(cursorViewportPos[i].y);
+            }
+        }
+
+        PushCursorHistory();
+        RefreshCursorTransforms();
+    }
+
+    /// <summary>
+    /// 残像用に各カーソルの位置履歴を1フレーム分進める(index0 が最新)。
+    /// </summary>
+    private void PushCursorHistory()
+    {
+        if (cursorHistory == null || cursorViewportPos == null) return;
+        for (int i = 0; i < 4; i++)
+        {
+            if (cursorHistory[i] == null) continue;
+            for (int h = HistoryLen - 1; h >= 1; h--)
+            {
+                cursorHistory[i][h] = cursorHistory[i][h - 1];
+            }
+            cursorHistory[i][0] = cursorViewportPos[i];
+        }
+    }
+
+    /// <summary>
+    /// 手番プレイヤーのカーソルが乗っているカードのインデックスを返す(無ければ -1)。
+    /// </summary>
+    private int GetActiveHoveredCard()
+    {
+        if (cardObjects == null || cursorViewportPos == null) return -1;
+        if (activePlayer < 0 || activePlayer >= cursorViewportPos.Length) return -1;
+
+        Camera cam = Camera.main;
+        if (cam == null) return -1;
+
+        // UIカーソルのビューポート座標を、カード(ワールド)と当たり判定するためワールドへ変換
+        float depth = Mathf.Abs(cam.transform.position.z);
+        Vector3 c = cam.ViewportToWorldPoint(new Vector3(
+            cursorViewportPos[activePlayer].x, cursorViewportPos[activePlayer].y, depth));
+        c.z = 0f;
+
+        int hovered = -1;
+        for (int i = 0; i < cardObjects.Length; i++)
+        {
+            if (cardObjects[i] == null) continue;
+            var sr = cardObjects[i].GetComponent<SpriteRenderer>();
+            if (sr == null) continue;
+            Bounds b = sr.bounds;
+            if (c.x >= b.min.x && c.x <= b.max.x && c.y >= b.min.y && c.y <= b.max.y)
+            {
+                hovered = i;   // 重なり時は後(右)のカードを優先
+            }
+        }
+        return hovered;
+    }
+
+    // ======= 4Pカーソル(マジシャンアイコン) =======
+
+    /// <summary>
+    /// 4人分のカーソルを生成する。Screen Space Overlay のCanvas上にUI(Image)として配置し、
+    /// ゲームカメラのズーム・画面遷移の影響を受けないようにする。各プレイヤー色のマジシャン帽アイコン。
+    /// </summary>
+    private void CreateCursors()
+    {
+        DestroyCursors();
+
+        // 最前面のオーバーレイCanvas
+        cursorCanvasObj = new GameObject("PlayerCursorCanvas",
+            typeof(Canvas), typeof(CanvasScaler));
+        var canvas = cursorCanvasObj.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 32000;   // 他のUIより手前
+        var scaler = cursorCanvasObj.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        playerCursors = new GameObject[4];
+        cursorViewportPos = new Vector2[4];
+        cursorGhosts = new Image[4][];
+        cursorHistory = new Vector2[4][];
+
+        for (int i = 0; i < 4; i++)
+        {
+            // 初期位置は画面右下に横一列で整列
+            Vector2 start = new Vector2(0.78f + i * 0.055f, 0.10f);
+            cursorViewportPos[i] = start;
+
+            Sprite sprite = CreateMousePointerSprite(GetPlayerColor(i));
+
+            // 残像(先に生成 = 背面に描画)
+            cursorGhosts[i] = new Image[GhostCount];
+            for (int g = 0; g < GhostCount; g++)
+            {
+                cursorGhosts[i][g] = CreateCursorImage($"Cursor_P{i + 1}_Ghost{g}", sprite);
+            }
+
+            // 本体(残像より後 = 前面に描画)
+            var mainImg = CreateCursorImage($"PlayerCursor_P{i + 1}", sprite);
+            playerCursors[i] = mainImg.gameObject;
+
+            // 履歴を初期位置で埋める
+            cursorHistory[i] = new Vector2[HistoryLen];
+            for (int h = 0; h < HistoryLen; h++) cursorHistory[i][h] = start;
+        }
+
+        RefreshCursorTransforms();
+    }
+
+    /// <summary>
+    /// カーソル用の Image(RectTransform 付き)を1枚生成する。先端を pivot に合わせる。
+    /// </summary>
+    private Image CreateCursorImage(string name, Sprite sprite)
+    {
+        var obj = new GameObject(name, typeof(RectTransform));
+        obj.transform.SetParent(cursorCanvasObj.transform, false);
+
+        var img = obj.AddComponent<Image>();
+        img.sprite = sprite;
+        img.raycastTarget = false;
+
+        var rt = obj.GetComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(cursorPixelSize, cursorPixelSize);
+        rt.pivot = CursorTipPivot;
+        return img;
+    }
+
+    /// <summary>
+    /// カーソルを破棄する。
+    /// </summary>
+    private void DestroyCursors()
+    {
+        if (cursorCanvasObj != null)
+        {
+            Destroy(cursorCanvasObj);   // 子のカーソルUI(本体・残像)も一緒に破棄される
+            cursorCanvasObj = null;
+        }
+        playerCursors = null;
+        cursorGhosts = null;
+        cursorViewportPos = null;
+        cursorHistory = null;
+    }
+
+    /// <summary>
+    /// 各カーソルUI(本体+残像)のアンカー位置とアルファを反映。
+    /// アンカーを正規化(0..1)で置くため、カメラや解像度に依存しない。
+    /// 手番=不透明,他=半透明。残像は履歴を辿って古いほど薄くする。
+    /// </summary>
+    private void RefreshCursorTransforms()
+    {
+        if (playerCursors == null || cursorViewportPos == null) return;
+
+        for (int i = 0; i < 4; i++)
+        {
+            float mainAlpha = (i == activePlayer) ? 1f : 0.4f;
+
+            // 残像(古いほど薄い)
+            if (cursorGhosts != null && cursorGhosts[i] != null && cursorHistory != null && cursorHistory[i] != null)
+            {
+                for (int g = 0; g < cursorGhosts[i].Length; g++)
+                {
+                    var gimg = cursorGhosts[i][g];
+                    if (gimg == null) continue;
+                    int hi = Mathf.Min((g + 1) * GhostStride, HistoryLen - 1);
+                    SetImageAnchor(gimg.rectTransform, cursorHistory[i][hi]);
+                    float fade = 1f - (g + 1) / (float)(GhostCount + 1);
+                    SetImageAlpha(gimg, mainAlpha * GhostMaxAlpha * fade);
+                }
+            }
+
+            // 本体
+            if (playerCursors[i] != null)
+            {
+                var rt = playerCursors[i].GetComponent<RectTransform>();
+                if (rt != null) SetImageAnchor(rt, cursorViewportPos[i]);
+                SetImageAlpha(playerCursors[i].GetComponent<Image>(), mainAlpha);
+            }
+        }
+    }
+
+    private static void SetImageAnchor(RectTransform rt, Vector2 viewport)
+    {
+        if (rt == null) return;
+        rt.anchorMin = viewport;
+        rt.anchorMax = viewport;
+        rt.anchoredPosition = Vector2.zero;
+    }
+
+    private static void SetImageAlpha(Image img, float alpha)
+    {
+        if (img == null) return;
+        Color c = img.color;
+        img.color = new Color(c.r, c.g, c.b, alpha);
+    }
+
+    /// <summary>
+    /// マウスポインタ(矢印)のカーソルスプライトをコード生成する。
+    /// 先端は左上(pivot は CursorTipPivot)。塗りはプレイヤー色＋暗いアウトライン。
+    /// </summary>
+    private Sprite CreateMousePointerSprite(Color color)
+    {
+        int size = 64;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color[] px = new Color[size * size];
+        for (int i = 0; i < px.Length; i++) px[i] = Color.clear;
+
+        Color fillCol = color;
+        Color outline = new Color(0.08f, 0.06f, 0.12f, 1f);
+
+        // 定番の矢印ポインタ形状(y-down のグリッド単位, 先端が原点)
+        Vector2[] grid =
+        {
+            new Vector2(0f, 0f),
+            new Vector2(0f, 17f),
+            new Vector2(4.6f, 12.8f),
+            new Vector2(7.6f, 18.5f),
+            new Vector2(10.1f, 17.3f),
+            new Vector2(6.7f, 11.8f),
+            new Vector2(12f, 11.5f),
+        };
+        const float scale = 3.2f;
+        const float offX = 8f;
+        const float apexY = 60f;   // 先端の y(テクスチャ y-up)
+
+        // グリッド(y-down, 先端0) → テクスチャ座標(y-up)
+        Vector2[] poly = new Vector2[grid.Length];
+        for (int k = 0; k < grid.Length; k++)
+        {
+            poly[k] = new Vector2(offX + grid[k].x * scale, apexY - grid[k].y * scale);
+        }
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                if (PointInPolygon(new Vector2(x + 0.5f, y + 0.5f), poly))
+                {
+                    px[y * size + x] = fillCol;
+                }
+            }
+        }
+
+        // 1pxの暗いアウトラインを外側に付ける
+        Color[] outlined = (Color[])px.Clone();
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int idx = y * size + x;
+                if (px[idx].a > 0f) continue;
+                bool near = false;
+                for (int oy = -1; oy <= 1 && !near; oy++)
+                {
+                    for (int ox = -1; ox <= 1; ox++)
+                    {
+                        int nx = x + ox, ny = y + oy;
+                        if (nx < 0 || nx >= size || ny < 0 || ny >= size) continue;
+                        if (px[ny * size + nx].a > 0f) { near = true; break; }
+                    }
+                }
+                if (near) outlined[idx] = outline;
+            }
+        }
+
+        tex.SetPixels(outlined);
+        tex.Apply();
+        tex.filterMode = FilterMode.Bilinear;
+        // pivot は先端(左上)。CursorTipPivot と一致させる。
+        return Sprite.Create(tex, new Rect(0, 0, size, size), CursorTipPivot, size);
+    }
+
+    /// <summary>
+    /// 点が多角形の内側かどうか(レイキャスト法)。
+    /// </summary>
+    private static bool PointInPolygon(Vector2 p, Vector2[] poly)
+    {
+        bool inside = false;
+        int n = poly.Length;
+        for (int i = 0, j = n - 1; i < n; j = i++)
+        {
+            if (((poly[i].y > p.y) != (poly[j].y > p.y)) &&
+                (p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+            {
+                inside = !inside;
+            }
+        }
+        return inside;
     }
 
     private void UpdateCardHighlights()
     {
         if (cardObjects == null) return;
 
-        Vector2 frameSize = frameUI.GetAllyFrameSize();
-        float baseScale = Mathf.Min(frameSize.x, frameSize.y) * 0.17f;
+        float baseScale = baseCardScale;
 
         for (int i = 0; i < cardObjects.Length; i++)
         {
             if (cardObjects[i] == null) continue;
+
+            // 選択中のカードは最前面に出す(重なり時に隠れないように)
+            SetCardFront(cardObjects[i], i == cursorIndex);
 
             // 選択中のカードは明るく大きく、それ以外は少し暗くして小さく
             if (i == cursorIndex)
@@ -379,6 +795,28 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// カードの描画順を制御。選択中カードを最前面に出し、重なっても隠れないようにする。
+    /// 生成時の基準: Glow=98, 本体=100, テキスト=104。front時は +20 する。
+    /// </summary>
+    private void SetCardFront(GameObject cardObj, bool front)
+    {
+        int boost = front ? 20 : 0;
+
+        var srs = cardObj.GetComponentsInChildren<SpriteRenderer>();
+        foreach (var sr in srs)
+        {
+            int baseOrder = sr.gameObject.name == "Glow" ? 98 : 100;
+            sr.sortingOrder = baseOrder + boost;
+        }
+
+        var mrs = cardObj.GetComponentsInChildren<MeshRenderer>();
+        foreach (var mr in mrs)
+        {
+            mr.sortingOrder = 104 + boost;
         }
     }
 
@@ -428,29 +866,42 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     }
 
     /// <summary>
-    /// カードをアニメーション付きで生成（左からシャッフル演出で登場）
+    /// カードをアニメーション付きで生成（画面右外からシャッフル演出で登場）
     /// </summary>
     private IEnumerator SpawnCardsAnimation(List<CardInstance> hand)
     {
         isAnimating = true;
 
-        Vector3[] cardSlots = frameUI.GetCardSlotPositions();
-        Vector2 frameSize = frameUI.GetAllyFrameSize();
+        Camera cam = Camera.main;
+        int count = Mathf.Min(hand.Count, 3);
+        Vector3[] cardSlots = ComputeCardSlots(count);
         cardObjects = new GameObject[hand.Count];
         cardOriginalColors = new Color[hand.Count][];
 
-        // 左端の開始位置（キャラクターの左側、画面外）
-        Vector3 leftFrameCenter = frameUI.GetAllyFrameCenter(0);
-        Vector3 deckPosition = leftFrameCenter + new Vector3(-3f, 0f, 0f);
+        // 開始位置（画面右外・少し上のデッキから配られる想定 = 右からドロー）
+        Vector3 deckPosition = cam.ViewportToWorldPoint(new Vector3(1.3f, cardsCenterY + 0.18f, Mathf.Abs(cam.transform.position.z)));
+        deckPosition.z = 0f;
 
-        for (int i = 0; i < hand.Count && i < 3; i++)
+        // カードの基準スケールは最初の1枚から算出し、全カードで統一する
+        baseCardScale = 1f;
+        bool scaleResolved = false;
+
+        for (int i = 0; i < count; i++)
         {
             var card = hand[i];
             Vector3 targetPos = cardSlots[i];
 
-            // 全てのカードは左のデッキ位置から開始
-            GameObject cardObj = CreateCardVisual(card, deckPosition, frameSize);
+            // 全てのカードはデッキ位置から開始
+            GameObject cardObj = CreateCardVisual(card, deckPosition);
             cardObjects[i] = cardObj;
+
+            // 最初のカードでカメラ倍率に応じた基準スケールを確定
+            if (!scaleResolved)
+            {
+                baseCardScale = ComputeCardScale(cardObj);
+                scaleResolved = true;
+            }
+            cardObj.transform.localScale = Vector3.one * baseCardScale;
 
             // オリジナル色を保存
             StoreCardOriginalColors(cardObj, i);
@@ -474,12 +925,12 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     {
         float elapsed = 0f;
 
-        // 初期回転（カードが傾いた状態で始まる）
-        float startRotation = -15f + cardIndex * 5f;
+        // 初期回転（右手から配るように傾いた状態で始まり、着地で0へ戻る）
+        float startRotation = -20f - cardIndex * 4f;
         cardObj.transform.rotation = Quaternion.Euler(0f, 0f, startRotation);
 
-        // 中間点（少し上に浮かせてアーチを描く）
-        Vector3 midPoint = (startPos + endPos) / 2f + new Vector3(0f, 0.8f, 0f);
+        // 中間点（弧を浅くして右から横滑りで入る感じに）
+        Vector3 midPoint = (startPos + endPos) / 2f + new Vector3(0f, 0.35f, 0f);
 
         while (elapsed < duration)
         {
@@ -508,15 +959,18 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     }
 
     /// <summary>
-    /// カード退場アニメーション（選択カードは下へ、他は左へ）
+    /// カード退場アニメーション（選択カードは下へ、他は画面右外へ）
     /// </summary>
     private IEnumerator AnimateCardsExit(int selectedIndex)
     {
         if (cardObjects == null) yield break;
 
-        Vector3 leftFrameCenter = frameUI.GetAllyFrameCenter(0);
-        Vector3 leftExitPos = leftFrameCenter + new Vector3(-4f, 0f, 0f);  // 左側へ
-        Vector3 downExitPos = new Vector3(0f, -6f, 0f);  // 下へスクリーンアウト
+        Camera cam = Camera.main;
+        // 非選択カードは画面右外へ戻す
+        Vector3 rightExitPos = cam.ViewportToWorldPoint(new Vector3(1.35f, cardsCenterY, Mathf.Abs(cam.transform.position.z)));
+        rightExitPos.z = 0f;
+        // 選択カードは現在のカメラ高さ分だけ下へ抜ける
+        float downDistance = cam.orthographicSize * 2f + 2f;
 
         float exitDuration = 0.35f;
 
@@ -526,19 +980,17 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             if (cardObjects[i] == null) continue;
 
             Vector3 startPos = cardObjects[i].transform.position;
-            Vector3 targetPos;
 
             if (i == selectedIndex)
             {
-                // 選択されたカードは下へ
-                targetPos = startPos + downExitPos;
+                // 選択されたカードは下へスクリーンアウト
+                Vector3 targetPos = startPos + new Vector3(0f, -downDistance, 0f);
                 StartCoroutine(AnimateCardExitDown(cardObjects[i], startPos, targetPos, exitDuration));
             }
             else
             {
-                // 他のカードは左へ戻る
-                targetPos = leftExitPos;
-                StartCoroutine(AnimateCardExitLeft(cardObjects[i], startPos, targetPos, exitDuration, i));
+                // 他のカードは画面右外へ戻る
+                StartCoroutine(AnimateCardExitLeft(cardObjects[i], startPos, rightExitPos, exitDuration, i));
             }
         }
 
@@ -639,14 +1091,13 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         return sb.ToString();
     }
 
-    private GameObject CreateCardVisual(CardInstance card, Vector3 position, Vector2 frameSize)
+    private GameObject CreateCardVisual(CardInstance card, Vector3 position)
     {
         GameObject cardObj = new GameObject($"Card_{card.Data.displayName}");
         cardObj.transform.position = position;
 
-        // カードサイズをフレームに合わせる（カード画像は367x556px）
-        float scale = Mathf.Min(frameSize.x, frameSize.y) * 0.17f;
-        cardObj.transform.localScale = Vector3.one * scale;
+        // スケールは呼び出し側でカメラ倍率に応じて設定する（ここでは等倍）
+        cardObj.transform.localScale = Vector3.one;
 
         // カード背景画像をResourcesから読み込み
         string spritePath = GetCardSpritePath(card.Data.category, card.Data.tier);
