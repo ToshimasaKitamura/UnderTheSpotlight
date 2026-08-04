@@ -42,8 +42,12 @@ public class BattleStateMachine : MonoBehaviour
     // 現在の列挙値としての状態
     private State currentState;
 
+    /// <summary>現在のフェーズ状態(デバッグメニュー等から参照)。</summary>
+    public State CurrentState => currentState;
+
     private void Awake()
     {
+
         // フォント: GameTuning.displayFont / bodyFont を全 UI に反映(任意)
         if (fontTuning == null)
         {

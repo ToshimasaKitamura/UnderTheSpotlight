@@ -41,6 +41,14 @@ public class CharacterSelectSceneController : MonoBehaviour
     private int debugActivePlayer = 0;
     private int lastInputPlayerIndex = 0;
 
+    // カーソル(各プレイヤー色のマウスポインタ絵)。カード選択と同じくキーボードで動かす。
+    // 数字キー(1〜4)を押しながら WASD/矢印でそのプレイヤーのカーソルを移動。無ければ activePlayer。
+    private Canvas cursorCanvas;
+    private RectTransform[] cursorRT;
+    private Vector2[] cursorPos;
+    private int activePlayer = 0;
+    private const float CursorSpeed = 900f; // カーソル移動速度(px/秒)
+
     private float inputCooldown = 0f;
 private const float INPUT_COOLDOWN_TIME = 0.15f;
     private bool stickPressed = false;
@@ -75,6 +83,9 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
     {
         Debug.Log($"[CharacterSelect] Start() - availableCharacters.Count = {availableCharacters.Count}");
 
+        // Unity 6 では旧既定フォント(Arial)が無く uGUI Text が空白になる。全 Text に規定フォントを設定。
+        ApplyFontToAllTexts();
+
         // null 除去
         availableCharacters.RemoveAll(c => c == null);
 
@@ -102,13 +113,15 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         {
             gridView.Build(availableCharacters);
             gridView.SetLocked(false);
+            gridView.SetPlayerCursors(new int[] { -1, -1, -1, -1 }); // 旧ボタン方式の色枠を全消灯
         }
 
         if (playerListView != null)
         {
             playerListView.ClearAll();
         }
-        
+
+        CreateCursors();   // 各プレイヤーのカーソルを生成(キーボード選択は撤廃)
         UpdateUI();
     }
 
@@ -122,106 +135,158 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         HandleInput();
     }
 
+    // カーソルをキーボードで動かす方式(カード選択と同じ)。
+    // WASD/矢印で移動。数字キー(1〜4)押しっぱなしでそのプレイヤーのカーソルを操作、無ければ activePlayer。
+    // ホバー中のカードに重ねて Enter/Space/Z で決定。
     private void HandleInput()
     {
-        // 数字キーによるデバッグプレイヤー切り替え
-        debugActivePlayer = 0;
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.digit1Key.isPressed) debugActivePlayer = 1;
-            else if (Keyboard.current.digit2Key.isPressed) debugActivePlayer = 2;
-            else if (Keyboard.current.digit3Key.isPressed) debugActivePlayer = 3;
-            else if (Keyboard.current.digit4Key.isPressed) debugActivePlayer = 4;
-        }
+        if (cursorRT == null) return;
+        var kb = Keyboard.current;
+        if (kb == null) return;
 
-        // 操作対象の決定
-        // デバッグモード時は指定プレイヤーのみ、通常時は(暫定的に)P1のみ操作可能とするか、
-        // あるいは全未確定プレイヤーを同時操作するか
-        // ユーザーの要望は「数字キーを押しながらだとそのプレイヤーのカーソルを操作」
-        
-        if (debugActivePlayer > 0)
+        // 移動方向
+        Vector2 dir = Vector2.zero;
+        if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) dir.x -= 1f;
+        if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) dir.x += 1f;
+        if (kb.upArrowKey.isPressed || kb.wKey.isPressed) dir.y += 1f;
+        if (kb.downArrowKey.isPressed || kb.sKey.isPressed) dir.y -= 1f;
+        if (dir.sqrMagnitude > 1f) dir = dir.normalized;
+
+        // 操作対象: 数字キー押しっぱなし(複数可)。無ければ activePlayer のみ。
+        bool[] holdP = { kb.digit1Key.isPressed, kb.digit2Key.isPressed, kb.digit3Key.isPressed, kb.digit4Key.isPressed };
+        bool anyHeld = holdP[0] || holdP[1] || holdP[2] || holdP[3];
+
+        // カーソル移動
+        if (dir != Vector2.zero)
         {
-            int pIdx = debugActivePlayer - 1;
-            if (!isPlayerConfirmed[pIdx])
+            for (int p = 0; p < numberOfPlayers; p++)
             {
-                ProcessPlayerInput(pIdx);
+                bool move = anyHeld ? holdP[p] : (p == activePlayer);
+                if (!move) continue;
+                cursorPos[p] += dir * CursorSpeed * Time.deltaTime;
+                cursorPos[p].x = Mathf.Clamp(cursorPos[p].x, 0f, Screen.width);
+                cursorPos[p].y = Mathf.Clamp(cursorPos[p].y, 0f, Screen.height);
+                if (cursorRT[p] != null) cursorRT[p].position = cursorPos[p];
+                activePlayer = p;
             }
         }
-        else
+
+        // ホバー中のカードを各プレイヤーの選択に反映(変化時のみ更新)
+        bool changed = false;
+        for (int p = 0; p < numberOfPlayers; p++)
         {
-            // デバッグキーなし：最後に操作したプレイヤーのみ操作
-            // （そのプレイヤーが確定済みなら最初の未確定プレイヤーを操作）
-            int targetPlayer = lastInputPlayerIndex;
-            if (isPlayerConfirmed[targetPlayer])
+            if (isPlayerConfirmed[p]) continue;
+            int hover = CardUnderCursor(cursorPos[p]);
+            if (hover >= 0 && hover != playerCursorIndices[p])
             {
-                // 最初の未確定プレイヤーを探す
-                for (int i = 0; i < 4; i++)
+                playerCursorIndices[p] = hover;
+                lastInputPlayerIndex = p;
+                changed = true;
+            }
+        }
+        if (changed) { PlaySound(cursorMoveSfx); UpdateUI(); }
+
+        // 決定: 対象プレイヤー(数字キー押下 or activePlayer)のホバーカードを確定
+        if (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame)
+        {
+            for (int p = 0; p < numberOfPlayers; p++)
+            {
+                bool target = anyHeld ? holdP[p] : (p == activePlayer);
+                if (!target || isPlayerConfirmed[p]) continue;
+                int hover = CardUnderCursor(cursorPos[p]);
+                if (hover >= 0)
                 {
-                    if (!isPlayerConfirmed[i])
-                    {
-                        targetPlayer = i;
-                        break;
-                    }
+                    playerCursorIndices[p] = hover;
+                    lastInputPlayerIndex = p;
+                    ConfirmPlayerSelection(p);
+                    PlaySound(confirmSfx);
+                    UpdateUI();
                 }
             }
-
-            if (!isPlayerConfirmed[targetPlayer])
-            {
-                ProcessPlayerInput(targetPlayer);
-            }
         }
 
-        // キャンセル（一律）
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
-        {
+        // 戻る
+        if (kb.escapeKey.wasPressedThisFrame)
             GameSceneManager.Instance?.LoadWorldMapScene();
+    }
+
+    private Camera _hitCam;
+    private bool _hitCamResolved;
+    /// <summary>カードが載る Canvas の当たり判定用カメラ(Overlay なら null、Camera/World ならその camera)。</summary>
+    private Camera HitCamera()
+    {
+        if (_hitCamResolved) return _hitCam;
+        _hitCamResolved = true;
+        var canvas = gridView != null ? gridView.GetComponentInParent<Canvas>() : null;
+        if (canvas != null)
+        {
+            canvas = canvas.rootCanvas;
+            _hitCam = canvas.renderMode == RenderMode.ScreenSpaceOverlay
+                ? null
+                : (canvas.worldCamera != null ? canvas.worldCamera : Camera.main);
+        }
+        else _hitCam = Camera.main;
+        return _hitCam;
+    }
+
+    /// <summary>スクリーン座標の下にあるカードのインデックス(なければ -1)。</summary>
+    private int CardUnderCursor(Vector2 screenPos)
+    {
+        if (gridView == null || gridView.characterCards == null) return -1;
+        var cam = HitCamera();
+        var cards = gridView.characterCards;
+        for (int i = 0; i < cards.Length; i++)
+        {
+            var c = cards[i];
+            if (c == null || !c.gameObject.activeSelf) continue;
+            var rt = c.transform as RectTransform;
+            if (rt != null && RectTransformUtility.RectangleContainsScreenPoint(rt, screenPos, cam))
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>各プレイヤー色のカーソル(リング)を生成。OSカーソルは隠す。</summary>
+    private void CreateCursors()
+    {
+        var go = new GameObject("CharSelectCursors", typeof(Canvas));
+        cursorCanvas = go.GetComponent<Canvas>();
+        cursorCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        cursorCanvas.sortingOrder = 500;
+
+        cursorRT = new RectTransform[numberOfPlayers];
+        cursorPos = new Vector2[numberOfPlayers];
+        for (int p = 0; p < numberOfPlayers; p++)
+        {
+            var img = new GameObject($"Cursor{p + 1}", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image))
+                .GetComponent<UnityEngine.UI.Image>();
+            img.transform.SetParent(cursorCanvas.transform, false);
+            img.sprite = CursorSprite.CreatePointer(PlayerColor(p));  // ゲーム共通のマウスカーソル絵
+            img.raycastTarget = false;
+            cursorRT[p] = img.rectTransform;
+            cursorRT[p].pivot = CursorSprite.TipPivot;                // 先端がカーソル座標に来る
+            cursorRT[p].sizeDelta = new Vector2(58f, 58f);
+            cursorPos[p] = new Vector2(Screen.width * (0.32f + 0.12f * p), Screen.height * 0.55f);
+            cursorRT[p].position = cursorPos[p];
         }
     }
 
-    private void ProcessPlayerInput(int pIdx)
+    private static Color PlayerColor(int p)
     {
-        if (inputCooldown > 0) return;
+        var pal = GameColorScheme.Players;
+        return (pal != null && p >= 0 && p < pal.Length) ? pal[p] : Color.white;
+    }
 
-        int moveX = 0;
-        int moveY = 0;
-        bool confirmPressed = false;
 
-        var keyboard = Keyboard.current;
-        if (keyboard != null)
+    private void ApplyFontToAllTexts()
+    {
+        var font = GameFont.Body();
+        if (font == null) return;
+        foreach (var t in FindObjectsByType<UnityEngine.UI.Text>(FindObjectsInactive.Include, FindObjectsSortMode.None))
         {
-            if (keyboard.rightArrowKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame) moveX = 1;
-            if (keyboard.leftArrowKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame) moveX = -1;
-            if (keyboard.upArrowKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame) moveY = -1;
-            if (keyboard.downArrowKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame) moveY = 1;
-
-            confirmPressed = keyboard.enterKey.wasPressedThisFrame ||
-                           keyboard.spaceKey.wasPressedThisFrame ||
-                           keyboard.zKey.wasPressedThisFrame;
+            if (t != null) t.font = font;
         }
-
-        // 移動
-        if (moveX != 0 || moveY != 0)
-        {
-            int delta = moveX != 0 ? moveX : moveY;
-            int count = availableCharacters.Count;
-            playerCursorIndices[pIdx] = (playerCursorIndices[pIdx] + delta + count) % count;
-            
-            lastInputPlayerIndex = pIdx;
-            PlaySound(cursorMoveSfx);
-            inputCooldown = INPUT_COOLDOWN_TIME;
-            UpdateUI();
-        }
-
-        // 決定
-        if (confirmPressed)
-        {
-            lastInputPlayerIndex = pIdx;
-            ConfirmPlayerSelection(pIdx);
-            PlaySound(confirmSfx);
-            inputCooldown = INPUT_COOLDOWN_TIME;
-            UpdateUI();
-        }
-}
+    }
 
     private void ConfirmPlayerSelection(int pIdx)
     {
@@ -246,11 +311,7 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
 
     private void UpdateUI()
     {
-        // グリッドの枠表示更新
-        if (gridView != null)
-        {
-            gridView.SetPlayerCursors(playerCursorIndices);
-        }
+        // カード背景の色枠(旧ボタン選択方式の名残)は表示しない。位置はカーソルで示す。
 
         // スポットライト更新
         // 表示対象の決定: 

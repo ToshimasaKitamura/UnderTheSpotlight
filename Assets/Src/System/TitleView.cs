@@ -14,14 +14,8 @@ public class TitleView : MonoBehaviour
     [Header("メニュー設定")]
     [SerializeField] private string[] menuItems = { "START GAME", "OPTIONS", "EXIT" };
 
-    [Header("8bit カラー設定（GameColorScheme ベース）")]
-    [SerializeField] private Color bgColor1 = new Color(0.12f, 0.05f, 0.18f);  // PrimaryDark
-    [SerializeField] private Color bgColor2 = new Color(0.06f, 0.02f, 0.1f);   // より暗い紫
-    [SerializeField] private Color titleColor = new Color(1f, 0.9f, 0.3f);     // AccentBright
-    [SerializeField] private Color subtitleColor = new Color(0.65f, 0.40f, 0.75f); // PrimaryBright
-    [SerializeField] private Color menuColor = new Color(0.95f, 0.92f, 1f);    // TextPrimary
-    [SerializeField] private Color menuSelectColor = new Color(1f, 0.9f, 0.3f); // AccentBright
-    [SerializeField] private Color starColor = new Color(0.9f, 0.75f, 0.2f);   // AccentMid
+    // 色はテーマ(GameColorScheme)に一元化。正典: Docs/Specifications/デザインテーマ.md
+    //   背景=Background グラデ / タイトル・選択・スター=Accent / メニュー=TextOnDark / サブ=TextMuted
 
     // 参照
     private TitleSceneController controller;
@@ -76,46 +70,47 @@ public class TitleView : MonoBehaviour
     {
         // 背景（ディザリンググラデーション）
         bgTexture = PixelFontRenderer.CreateDitheredGradient(
-            Screen.width / 4, Screen.height / 4, bgColor1, bgColor2, 2);
+            Screen.width / 4, Screen.height / 4,
+            GameColorScheme.BackgroundTop, GameColorScheme.BackgroundBottom, 2);
 
         // タイトル
-        titleTexture = PixelFontRenderer.RenderText(titleText, titleColor, pixelScale + 2);
-        subtitleTexture = PixelFontRenderer.RenderText(subtitleText, subtitleColor, pixelScale);
-        pressKeyTexture = PixelFontRenderer.RenderText(pressKeyText, Color.white, pixelScale);
+        titleTexture = PixelFontRenderer.RenderText(titleText, GameColorScheme.Accent, pixelScale + 2);
+        subtitleTexture = PixelFontRenderer.RenderText(subtitleText, GameColorScheme.TextMuted, pixelScale);
+        pressKeyTexture = PixelFontRenderer.RenderText(pressKeyText, GameColorScheme.TextOnDark, pixelScale);
 
         // メニュー項目
         menuTextures = new Texture2D[menuItems.Length];
         menuSelectTextures = new Texture2D[menuItems.Length];
         for (int i = 0; i < menuItems.Length; i++)
         {
-            menuTextures[i] = PixelFontRenderer.RenderText(menuItems[i], menuColor, pixelScale);
-            menuSelectTextures[i] = PixelFontRenderer.RenderText("> " + menuItems[i] + " <", menuSelectColor, pixelScale);
+            menuTextures[i] = PixelFontRenderer.RenderText(menuItems[i], GameColorScheme.TextOnDark, pixelScale);
+            menuSelectTextures[i] = PixelFontRenderer.RenderText("> " + menuItems[i] + " <", GameColorScheme.Accent, pixelScale);
         }
 
         // カーソル
-        cursorTexture = PixelFontRenderer.CreatePixelStar(pixelScale * 8, menuSelectColor);
+        cursorTexture = PixelFontRenderer.CreatePixelStar(pixelScale * 8, GameColorScheme.Accent);
 
         // スター（背景装飾）
         starTextures = new Texture2D[3];
+        Color starBase = GameColorScheme.Accent;
         for (int i = 0; i < 3; i++)
         {
             int size = pixelScale * (4 + i * 2);
             float brightness = 0.4f + i * 0.2f;
             starTextures[i] = PixelFontRenderer.CreatePixelStar(size,
-                new Color(starColor.r * brightness, starColor.g * brightness, starColor.b * brightness));
+                new Color(starBase.r * brightness, starBase.g * brightness, starBase.b * brightness));
         }
 
-        // ボックス（メニュー背景）- 紫ベース
-        boxTexture = PixelFontRenderer.CreatePixelBox(400, 200,
-            new Color(0.12f, 0.05f, 0.18f, 0.9f),
-            new Color(0.5f, 0.35f, 0.6f), pixelScale);
+        // ボックス（メニュー背景）
+        Color boxFill = GameColorScheme.Surface; boxFill.a = 0.9f;
+        boxTexture = PixelFontRenderer.CreatePixelBox(400, 200, boxFill, GameColorScheme.Main, pixelScale);
 
         // バージョン
-        versionTexture = PixelFontRenderer.RenderText("V0.1.0", new Color(0.4f, 0.4f, 0.5f), pixelScale - 1);
+        versionTexture = PixelFontRenderer.RenderText("V0.1.0", GameColorScheme.TextMuted, pixelScale - 1);
 
         // 操作説明
         controlHintTexture = PixelFontRenderer.RenderText(
-            "ARROW:SELECT  Z:OK  X:BACK", new Color(0.5f, 0.5f, 0.6f), pixelScale - 1);
+            "ARROW:SELECT  Z:OK  X:BACK", GameColorScheme.TextMuted, pixelScale - 1);
     }
 
     private void DestroyTextures()

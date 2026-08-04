@@ -195,12 +195,8 @@ public class GroupButtonIMGUIHelper : MonoBehaviour
             timerTexture = PixelFontRenderer.RenderText(timerText, new Color(1f, 0.9f, 0.4f), pixelScale + 2);
             cachedTimer = timerText;
         }
-        if (timerTexture != null)
-        {
-            float x = centerX - timerTexture.width / 2f;
-            float y = centerY - 100f;
-            GUI.DrawTexture(new Rect(x, y, timerTexture.width, timerTexture.height), timerTexture);
-        }
+        // 右中央・金枠で描画(共通)
+        AcImgui.DrawTimerBox(timerTexture);
 
         // スロットテキスト更新
         string[] slots = game.GetSlotTexts();

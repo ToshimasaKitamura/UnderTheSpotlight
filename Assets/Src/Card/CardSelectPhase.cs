@@ -24,6 +24,9 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     [SerializeField] private PartyDeckController partyDeck;
     [Tooltip("各プレイヤーのキャラ Transform(注目演出の対象)。playerColors/turn と同じ並び。")]
     [SerializeField] private Transform[] playerTransforms;
+
+    /// <summary>プレイヤー順(P1..P4)に並んだキャラ Transform。他フェーズが順序の真実として参照。</summary>
+    public Transform[] PlayerTransforms => playerTransforms;
     [Tooltip("数値の唯一の真実(Excel/CSV連動)。設定すると下記既定値を上書き。")]
     [SerializeField] private GameTuning tuning;
     [Tooltip("バトルフレームUI")]
@@ -108,6 +111,11 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     private int selectedCardIndex = -1;
     private Color[][] cardOriginalColors;  // 各カードのオリジナル色を保持
     private float baseCardScale = 1f;      // カメラズームに合わせたカードの基準スケール
+    private Vector3[] cardBasePositions;   // 各カードのスロット基準位置(浮遊演出の基準)
+    private float cardFloatAmp = 0.02f;    // 浮遊の振幅(orthographicSize比)
+    private float cardFloatSpeed = 2.6f;   // 浮遊の速さ
+    private float cardSwayDeg = 1.0f;      // 浮遊時の傾き(度)
+    private float hoverScaleLerp = 12f;    // ホバー拡大/縮小の追従速度(大きいほど速い)
 
     // 舞台演出(カメラズーム/キャラ強調)
     private CardSelectStage stage;
@@ -125,7 +133,12 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     private const int HistoryLen = GhostCount * GhostStride + 1;
     private const float GhostMaxAlpha = 0.55f;
     // ポインタ先端(左上)をアンカー点にする pivot
-    private static readonly Vector2 CursorTipPivot = new Vector2(0.125f, 0.9375f);
+    // カーソル先端 pivot は CursorSprite.TipPivot に一元化
+
+    // 準備完了ボタン(全カード選択後、4人がカーソルで押す)
+    private Vector3[] readyButtonWorldPos;         // 各ボタンのワールド中心
+    private const float readyButtonRadius = 0.6f;  // 押下判定の半径(ワールド)
+    private bool cursorsAllActive;                 // trueの間は全カーソルを不透明にする
 
     // 選択されたカード表示用
     private GameObject[] selectedCardObjects;
@@ -546,7 +559,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             Vector2 start = new Vector2(0.78f + i * 0.055f, 0.10f);
             cursorViewportPos[i] = start;
 
-            Sprite sprite = CreateMousePointerSprite(GetPlayerColor(i));
+            Sprite sprite = CursorSprite.CreatePointer(GetPlayerColor(i));
 
             // 残像(先に生成 = 背面に描画)
             cursorGhosts[i] = new Image[GhostCount];
@@ -581,7 +594,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         var rt = obj.GetComponent<RectTransform>();
         rt.sizeDelta = new Vector2(cursorPixelSize, cursorPixelSize);
-        rt.pivot = CursorTipPivot;
+        rt.pivot = CursorSprite.TipPivot;
         return img;
     }
 
@@ -599,6 +612,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         cursorGhosts = null;
         cursorViewportPos = null;
         cursorHistory = null;
+        cursorsAllActive = false;
     }
 
     /// <summary>
@@ -612,7 +626,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         for (int i = 0; i < 4; i++)
         {
-            float mainAlpha = (i == activePlayer) ? 1f : 0.4f;
+            float mainAlpha = (cursorsAllActive || i == activePlayer) ? 1f : 0.4f;
 
             // 残像(古いほど薄い)
             if (cursorGhosts != null && cursorGhosts[i] != null && cursorHistory != null && cursorHistory[i] != null)
@@ -653,99 +667,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         img.color = new Color(c.r, c.g, c.b, alpha);
     }
 
-    /// <summary>
-    /// マウスポインタ(矢印)のカーソルスプライトをコード生成する。
-    /// 先端は左上(pivot は CursorTipPivot)。塗りはプレイヤー色＋暗いアウトライン。
-    /// </summary>
-    private Sprite CreateMousePointerSprite(Color color)
-    {
-        int size = 64;
-        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        Color[] px = new Color[size * size];
-        for (int i = 0; i < px.Length; i++) px[i] = Color.clear;
-
-        Color fillCol = color;
-        Color outline = new Color(0.08f, 0.06f, 0.12f, 1f);
-
-        // 定番の矢印ポインタ形状(y-down のグリッド単位, 先端が原点)
-        Vector2[] grid =
-        {
-            new Vector2(0f, 0f),
-            new Vector2(0f, 17f),
-            new Vector2(4.6f, 12.8f),
-            new Vector2(7.6f, 18.5f),
-            new Vector2(10.1f, 17.3f),
-            new Vector2(6.7f, 11.8f),
-            new Vector2(12f, 11.5f),
-        };
-        const float scale = 3.2f;
-        const float offX = 8f;
-        const float apexY = 60f;   // 先端の y(テクスチャ y-up)
-
-        // グリッド(y-down, 先端0) → テクスチャ座標(y-up)
-        Vector2[] poly = new Vector2[grid.Length];
-        for (int k = 0; k < grid.Length; k++)
-        {
-            poly[k] = new Vector2(offX + grid[k].x * scale, apexY - grid[k].y * scale);
-        }
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                if (PointInPolygon(new Vector2(x + 0.5f, y + 0.5f), poly))
-                {
-                    px[y * size + x] = fillCol;
-                }
-            }
-        }
-
-        // 1pxの暗いアウトラインを外側に付ける
-        Color[] outlined = (Color[])px.Clone();
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                int idx = y * size + x;
-                if (px[idx].a > 0f) continue;
-                bool near = false;
-                for (int oy = -1; oy <= 1 && !near; oy++)
-                {
-                    for (int ox = -1; ox <= 1; ox++)
-                    {
-                        int nx = x + ox, ny = y + oy;
-                        if (nx < 0 || nx >= size || ny < 0 || ny >= size) continue;
-                        if (px[ny * size + nx].a > 0f) { near = true; break; }
-                    }
-                }
-                if (near) outlined[idx] = outline;
-            }
-        }
-
-        tex.SetPixels(outlined);
-        tex.Apply();
-        tex.filterMode = FilterMode.Bilinear;
-        // pivot は先端(左上)。CursorTipPivot と一致させる。
-        return Sprite.Create(tex, new Rect(0, 0, size, size), CursorTipPivot, size);
-    }
-
-    /// <summary>
-    /// 点が多角形の内側かどうか(レイキャスト法)。
-    /// </summary>
-    private static bool PointInPolygon(Vector2 p, Vector2[] poly)
-    {
-        bool inside = false;
-        int n = poly.Length;
-        for (int i = 0, j = n - 1; i < n; j = i++)
-        {
-            if (((poly[i].y > p.y) != (poly[j].y > p.y)) &&
-                (p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
-            {
-                inside = !inside;
-            }
-        }
-        return inside;
-    }
+    // マウスカーソル絵の生成は CursorSprite.CreatePointer に一元化(重複排除)
 
     private void UpdateCardHighlights()
     {
@@ -757,42 +679,48 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         {
             if (cardObjects[i] == null) continue;
 
-            // 選択中のカードは最前面に出す(重なり時に隠れないように)
+            // ホバー中のカードは最前面に出す(重なり時に隠れないように)
             SetCardFront(cardObjects[i], i == cursorIndex);
 
-            // 選択中のカードは明るく大きく、それ以外は少し暗くして小さく
-            if (i == cursorIndex)
-            {
-                cardObjects[i].transform.localScale = Vector3.one * baseScale * 1.15f;
-                SetCardBrightness(cardObjects[i], i, 1f);
+            // 暗い状態は無し。全カード常にフルカラー。
+            // カーソルが当たったカードだけ拡大＋グロー＋浮遊でホバー表現する。
+            SetCardBrightness(cardObjects[i], i, 1f);
 
-                // グローを強調
-                var glow = cardObjects[i].transform.Find("Glow");
-                if (glow != null)
+            bool hovered = (i == cursorIndex);
+
+            // 拡大は一瞬で切り替えず、目標へなめらかに補間(フレームレート非依存)
+            Vector3 targetScale = Vector3.one * baseScale * (hovered ? 1.12f : 1f);
+            float k = 1f - Mathf.Exp(-hoverScaleLerp * Time.deltaTime);
+            cardObjects[i].transform.localScale = Vector3.Lerp(cardObjects[i].transform.localScale, targetScale, k);
+
+            // 浮遊演出: ホバー中は基準位置を中心に上下へゆらゆら＋わずかに傾ける
+            if (cardBasePositions != null && i < cardBasePositions.Length)
+            {
+                if (hovered)
                 {
-                    var glowSr = glow.GetComponent<SpriteRenderer>();
-                    if (glowSr != null)
-                    {
-                        Color c = glowSr.color;
-                        glowSr.color = new Color(c.r, c.g, c.b, 0.7f);
-                    }
+                    Camera cam = Camera.main;
+                    float amp = (cam != null ? cam.orthographicSize : 5f) * cardFloatAmp;
+                    float bob = Mathf.Sin(Time.time * cardFloatSpeed) * amp;
+                    float sway = Mathf.Sin(Time.time * cardFloatSpeed * 0.7f) * cardSwayDeg;
+                    cardObjects[i].transform.position = cardBasePositions[i] + new Vector3(0f, bob, 0f);
+                    cardObjects[i].transform.rotation = Quaternion.Euler(0f, 0f, sway);
+                }
+                else
+                {
+                    cardObjects[i].transform.position = cardBasePositions[i];
+                    cardObjects[i].transform.rotation = Quaternion.identity;
                 }
             }
-            else
-            {
-                cardObjects[i].transform.localScale = Vector3.one * baseScale * 0.95f;
-                SetCardBrightness(cardObjects[i], i, 0.55f);
 
-                // グローを弱める
-                var glow = cardObjects[i].transform.Find("Glow");
-                if (glow != null)
+            var glow = cardObjects[i].transform.Find("Glow");
+            if (glow != null)
+            {
+                var glowSr = glow.GetComponent<SpriteRenderer>();
+                if (glowSr != null)
                 {
-                    var glowSr = glow.GetComponent<SpriteRenderer>();
-                    if (glowSr != null)
-                    {
-                        Color c = glowSr.color;
-                        glowSr.color = new Color(c.r, c.g, c.b, 0.15f);
-                    }
+                    Color c = glowSr.color;
+                    float targetGlow = hovered ? 0.7f : 0f;
+                    glowSr.color = new Color(c.r, c.g, c.b, Mathf.Lerp(c.a, targetGlow, k));
                 }
             }
         }
@@ -877,6 +805,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         Vector3[] cardSlots = ComputeCardSlots(count);
         cardObjects = new GameObject[hand.Count];
         cardOriginalColors = new Color[hand.Count][];
+        cardBasePositions = new Vector3[hand.Count];
 
         // 開始位置（画面右外・少し上のデッキから配られる想定 = 右からドロー）
         Vector3 deckPosition = cam.ViewportToWorldPoint(new Vector3(1.3f, cardsCenterY + 0.18f, Mathf.Abs(cam.transform.position.z)));
@@ -890,6 +819,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         {
             var card = hand[i];
             Vector3 targetPos = cardSlots[i];
+            cardBasePositions[i] = targetPos;   // 浮遊演出の基準位置
 
             // 全てのカードはデッキ位置から開始
             GameObject cardObj = CreateCardVisual(card, deckPosition);
@@ -912,8 +842,8 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             yield return new WaitForSeconds(cardEnterStagger);
         }
 
-        // 最後のカードのアニメーション完了を待つ
-        yield return new WaitForSeconds(cardEnterDuration + 0.2f);
+        // 最後のカードの登場＋めくり演出の完了を待つ
+        yield return new WaitForSeconds(cardEnterDuration + 0.2f + 0.3f);
 
         isAnimating = false;
     }
@@ -956,6 +886,48 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         cardObj.transform.position = endPos;
         cardObj.transform.rotation = Quaternion.identity;
+
+        // スロット到達後、裏面をめくって表を見せる
+        yield return StartCoroutine(FlipReveal(cardObj));
+    }
+
+    /// <summary>
+    /// カードを横に潰して裏面を消し、表を見せるめくり演出。
+    /// </summary>
+    private IEnumerator FlipReveal(GameObject cardObj)
+    {
+        if (cardObj == null) yield break;
+
+        Transform back = cardObj.transform.Find("Back");
+        if (back == null) yield break;  // 裏面が無ければ何もしない(表のまま)
+
+        Vector3 baseScale = cardObj.transform.localScale;
+        float half = 0.13f;
+
+        // X方向に潰す(裏が見えている状態)
+        float t = 0f;
+        while (t < half)
+        {
+            t += Time.deltaTime;
+            float k = 1f - Mathf.Clamp01(t / half);
+            cardObj.transform.localScale = new Vector3(baseScale.x * k, baseScale.y, baseScale.z);
+            yield return null;
+        }
+
+        // 一番薄いところで裏を消して表に切り替え
+        back.gameObject.SetActive(false);
+
+        // X方向に開いて表を見せる
+        t = 0f;
+        while (t < half)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / half);
+            cardObj.transform.localScale = new Vector3(baseScale.x * k, baseScale.y, baseScale.z);
+            yield return null;
+        }
+
+        cardObj.transform.localScale = baseScale;
     }
 
     /// <summary>
@@ -1131,7 +1103,8 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             glowSr.sprite = CreateFallbackCardSprite();
         }
         Color glowColor = GetCardColor(card.Data.category);
-        glowSr.color = new Color(glowColor.r, glowColor.g, glowColor.b, 0.3f);
+        // 最初はグロー(外枠)を消した状態で配る。ホバー時のみ点灯する。
+        glowSr.color = new Color(glowColor.r, glowColor.g, glowColor.b, 0f);
         glowSr.sortingOrder = 98;
         glowObj.transform.localScale = Vector3.one * 1.1f;
 
@@ -1148,7 +1121,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         var nameMesh = nameObj.AddComponent<TextMesh>();
         nameMesh.text = card.Data.displayName;
         nameMesh.fontSize = 42;
-        nameMesh.characterSize = 0.065f;
+        nameMesh.characterSize = 0.082f;
         nameMesh.anchor = TextAnchor.MiddleCenter;
         nameMesh.alignment = TextAlignment.Center;
         nameMesh.color = new Color(0.15f, 0.1f, 0.05f, 1f);  // 暗い茶色
@@ -1156,6 +1129,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         var nameRenderer = nameObj.GetComponent<MeshRenderer>();
         nameRenderer.sortingOrder = 104;
+        ApplyCardFont(nameMesh);
 
         // 効果説明テキスト（テキストエリア下部）
         GameObject descObj = new GameObject("CardDescription");
@@ -1168,7 +1142,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         desc = WrapText(desc, 12);
         descMesh.text = desc;
         descMesh.fontSize = 28;
-        descMesh.characterSize = 0.05f;
+        descMesh.characterSize = 0.063f;
         descMesh.anchor = TextAnchor.MiddleCenter;
         descMesh.alignment = TextAlignment.Center;
         descMesh.color = new Color(0.25f, 0.2f, 0.15f, 1f);  // 少し明るい茶色
@@ -1176,6 +1150,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         var descRenderer = descObj.GetComponent<MeshRenderer>();
         descRenderer.sortingOrder = 104;
+        ApplyCardFont(descMesh);
 
         // 威力表示（テキストエリア右下）
         GameObject powerObj = new GameObject("Power");
@@ -1185,7 +1160,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         var powerMesh = powerObj.AddComponent<TextMesh>();
         powerMesh.text = $"{card.EffectivePower}";
         powerMesh.fontSize = 36;
-        powerMesh.characterSize = 0.06f;
+        powerMesh.characterSize = 0.075f;
         powerMesh.anchor = TextAnchor.MiddleCenter;
         powerMesh.alignment = TextAlignment.Center;
         powerMesh.color = new Color(0.3f, 0.2f, 0.1f, 1f);
@@ -1193,23 +1168,36 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         var powerRenderer = powerObj.GetComponent<MeshRenderer>();
         powerRenderer.sortingOrder = 104;
+        ApplyCardFont(powerMesh);
 
-        // カードレベル表示（左上に配置）
-        GameObject levelObj = new GameObject("CardLevel");
-        levelObj.transform.SetParent(cardObj.transform);
-        levelObj.transform.localPosition = new Vector3(-1.2f, 2.0f, 0f);
+        // カードレベル表示（左上に丸数字①②…で表現）
+        CreateLevelBadge(cardObj, card.UpgradeLevel + 1);
 
-        var levelMesh = levelObj.AddComponent<TextMesh>();
-        levelMesh.text = $"Lv.{card.UpgradeLevel + 1}";
-        levelMesh.fontSize = 42;
-        levelMesh.characterSize = 0.065f;
-        levelMesh.anchor = TextAnchor.MiddleCenter;
-        levelMesh.alignment = TextAlignment.Center;
-        levelMesh.color = GetLevelColor(card.UpgradeLevel + 1);
-        levelMesh.fontStyle = FontStyle.Bold;
+        // カード裏面（配布時は裏、スロット到達でめくって表にする）
+        // ※ 最後の子として追加する。表を隠すため最前面。SpriteRenderer列の末尾になるよう最後に生成。
+        Sprite backSprite = Resources.Load<Sprite>("Cards/Card_Back");
+        if (backSprite == null)
+        {
+            UnityEngine.Debug.LogWarning("[CardSelectPhase] カード裏面 Cards/Card_Back が見つかりません。裏面演出をスキップします。");
+        }
+        else
+        {
+            GameObject backObj = new GameObject("Back");
+            backObj.transform.SetParent(cardObj.transform);
+            backObj.transform.localPosition = Vector3.zero;
 
-        var levelRenderer = levelObj.GetComponent<MeshRenderer>();
-        levelRenderer.sortingOrder = 104;
+            var backSr = backObj.AddComponent<SpriteRenderer>();
+            backSr.sprite = backSprite;
+            backSr.sortingOrder = 110;  // 表(bg=100,text=104)より前面で覆う
+
+            // 表の背景と同じ見た目サイズに合わせる
+            Vector3 frontSize = bgSr.sprite != null ? bgSr.sprite.bounds.size : Vector3.one;
+            Vector3 backSize = backSprite.bounds.size;
+            backObj.transform.localScale = new Vector3(
+                backSize.x > 0.0001f ? frontSize.x / backSize.x : 1f,
+                backSize.y > 0.0001f ? frontSize.y / backSize.y : 1f,
+                1f);
+        }
 
         return cardObj;
     }
@@ -1304,6 +1292,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             }
         }
         cardObjects = null;
+        cardBasePositions = null;
     }
 
     /// <summary>
@@ -1527,41 +1516,37 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         // 黒背景と文字を表示
         GameObject bannerObj = CreateLevelBanner(totalLevel);
 
-        // 4人の入力待ちUIを表示
+        // 4人分の準備完了ボタンを表示（各自カーソルを重ねて決定キーで押す）
         GameObject readyUIObj = CreatePlayerReadyUI();
         bool[] playerReady = new bool[4];
 
-        // 4人全員がEnterを押すまで待機
+        // この間は全カーソルを不透明にして全員操作しやすくする
+        cursorsAllActive = true;
+
+        // 4人全員が自分のボタンを押すまで待機
         while (!AllPlayersReady(playerReady))
         {
-            // 各プレイヤーの入力をチェック（今はキーボードで代用）
+            // ボタンのホバー表示を更新
+            UpdateReadyButtonHover(readyUIObj, playerReady);
+
+            // 決定キーが押されたら、自分のボタンにカーソルが乗っているプレイヤーを準備完了に
             var kb = Keyboard.current;
-            if (kb != null)
+            if (kb != null && ConfirmPressed(kb))
             {
-                // P1: Enter, P2: Space, P3: Shift, P4: Ctrl（仮）
-                if (kb.enterKey.wasPressedThisFrame && !playerReady[0])
+                for (int p = 0; p < 4; p++)
                 {
-                    playerReady[0] = true;
-                    FillPlayerCircle(readyUIObj, 0);
-                }
-                if (kb.spaceKey.wasPressedThisFrame && !playerReady[1])
-                {
-                    playerReady[1] = true;
-                    FillPlayerCircle(readyUIObj, 1);
-                }
-                if (kb.leftShiftKey.wasPressedThisFrame && !playerReady[2])
-                {
-                    playerReady[2] = true;
-                    FillPlayerCircle(readyUIObj, 2);
-                }
-                if (kb.leftCtrlKey.wasPressedThisFrame && !playerReady[3])
-                {
-                    playerReady[3] = true;
-                    FillPlayerCircle(readyUIObj, 3);
+                    if (playerReady[p]) continue;
+                    if (IsCursorOnReadyButton(p))
+                    {
+                        playerReady[p] = true;
+                        FillPlayerCircle(readyUIObj, p);
+                    }
                 }
             }
             yield return null;
         }
+
+        cursorsAllActive = false;
 
         // 全員Ready後、少し待機
         yield return new WaitForSeconds(0.5f);
@@ -1823,15 +1808,33 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         GameObject readyUI = new GameObject("PlayerReadyUI");
 
         // バナーの下に配置
-        Vector3 centerPos = Camera.main.ViewportToWorldPoint(new Vector3(0.5f, 0.35f, 10f));
+        Vector3 centerPos = Camera.main.ViewportToWorldPoint(new Vector3(0.5f, 0.32f, 10f));
         centerPos.z = 0f;
         readyUI.transform.position = centerPos;
 
-        float circleSpacing = 1.2f;
+        float circleSpacing = 1.5f;
         float startX = -circleSpacing * 1.5f;
+
+        readyButtonWorldPos = new Vector3[4];
+
+        // 操作ヒント
+        GameObject hintObj = new GameObject("ReadyHint");
+        hintObj.transform.SetParent(readyUI.transform);
+        hintObj.transform.localPosition = new Vector3(0f, 1.1f, 0f);
+        var hintMesh = hintObj.AddComponent<TextMesh>();
+        hintMesh.text = "カーソルを重ねて決定キーで準備完了";
+        hintMesh.fontSize = 28;
+        hintMesh.characterSize = 0.07f;
+        hintMesh.anchor = TextAnchor.MiddleCenter;
+        hintMesh.alignment = TextAlignment.Center;
+        hintMesh.color = Color.white;
+        hintMesh.fontStyle = FontStyle.Bold;
+        hintObj.GetComponent<MeshRenderer>().sortingOrder = 306;
 
         for (int i = 0; i < 4; i++)
         {
+            readyButtonWorldPos[i] = centerPos + new Vector3(startX + i * circleSpacing, 0f, 0f);
+
             // 円の外枠（輪っか）
             GameObject circleObj = new GameObject($"Circle_P{i + 1}");
             circleObj.transform.SetParent(readyUI.transform);
@@ -1924,6 +1927,46 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             if (!playerReady[i]) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// プレイヤー p のカーソルが自分の準備完了ボタンに乗っているか。
+    /// </summary>
+    private bool IsCursorOnReadyButton(int p)
+    {
+        if (readyButtonWorldPos == null || cursorViewportPos == null) return false;
+        if (p < 0 || p >= 4 || p >= cursorViewportPos.Length) return false;
+
+        Camera cam = Camera.main;
+        if (cam == null) return false;
+
+        float depth = Mathf.Abs(cam.transform.position.z);
+        Vector3 c = cam.ViewportToWorldPoint(new Vector3(cursorViewportPos[p].x, cursorViewportPos[p].y, depth));
+        c.z = 0f;
+
+        Vector2 cur = new Vector2(c.x, c.y);
+        Vector2 btn = new Vector2(readyButtonWorldPos[p].x, readyButtonWorldPos[p].y);
+        return Vector2.Distance(cur, btn) < readyButtonRadius;
+    }
+
+    /// <summary>
+    /// 準備完了ボタンのホバー表示を更新（未Readyのボタンをカーソルが乗ると少し拡大）。
+    /// </summary>
+    private void UpdateReadyButtonHover(GameObject readyUI, bool[] playerReady)
+    {
+        if (readyUI == null) return;
+        float k = 1f - Mathf.Exp(-12f * Time.deltaTime);
+
+        for (int p = 0; p < 4; p++)
+        {
+            if (playerReady[p]) continue;   // Ready済みは FillPlayerCircle 側の演出に任せる
+            Transform circle = readyUI.transform.Find($"Circle_P{p + 1}");
+            if (circle == null) continue;
+
+            bool hover = IsCursorOnReadyButton(p);
+            float target = hover ? 0.95f : 0.8f;
+            circle.localScale = Vector3.Lerp(circle.localScale, Vector3.one * target, k);
+        }
     }
 
     /// <summary>
@@ -2082,7 +2125,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         var nameMesh = nameObj.AddComponent<TextMesh>();
         nameMesh.text = card.Data.displayName;
         nameMesh.fontSize = 42;
-        nameMesh.characterSize = 0.065f;
+        nameMesh.characterSize = 0.082f;
         nameMesh.anchor = TextAnchor.MiddleCenter;
         nameMesh.alignment = TextAlignment.Center;
         nameMesh.color = new Color(0.15f, 0.1f, 0.05f, 1f);
@@ -2090,23 +2133,10 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         var nameRenderer = nameObj.GetComponent<MeshRenderer>();
         nameRenderer.sortingOrder = 204;
+        ApplyCardFont(nameMesh);
 
-        // カードレベル表示（左上に配置）- カード名と同じフォント設定
-        GameObject levelObj = new GameObject("CardLevel");
-        levelObj.transform.SetParent(cardObj.transform);
-        levelObj.transform.localPosition = new Vector3(-1.2f, 2.0f, 0f);
-
-        var levelMesh = levelObj.AddComponent<TextMesh>();
-        levelMesh.text = $"Lv.{card.UpgradeLevel + 1}";
-        levelMesh.fontSize = 42;
-        levelMesh.characterSize = 0.065f;
-        levelMesh.anchor = TextAnchor.MiddleCenter;
-        levelMesh.alignment = TextAlignment.Center;
-        levelMesh.color = GetLevelColor(card.UpgradeLevel + 1);
-        levelMesh.fontStyle = FontStyle.Bold;
-
-        var levelRenderer = levelObj.GetComponent<MeshRenderer>();
-        levelRenderer.sortingOrder = 205;
+        // カードレベル表示（左上に丸数字①②…で表現）
+        CreateLevelBadge(cardObj, card.UpgradeLevel + 1, 205);
 
         // プレイヤー番号表示（右下に配置）- カード名と同じフォント設定
         GameObject playerObj = new GameObject("PlayerNumber");
@@ -2116,7 +2146,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         var playerMesh = playerObj.AddComponent<TextMesh>();
         playerMesh.text = $"P{playerIndex + 1}";
         playerMesh.fontSize = 42;
-        playerMesh.characterSize = 0.065f;
+        playerMesh.characterSize = 0.082f;
         playerMesh.anchor = TextAnchor.MiddleCenter;
         playerMesh.alignment = TextAlignment.Center;
         playerMesh.color = GetPlayerColor(playerIndex);
@@ -2124,6 +2154,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         var playerRenderer = playerObj.GetComponent<MeshRenderer>();
         playerRenderer.sortingOrder = 205;
+        ApplyCardFont(playerMesh);
 
         return cardObj;
     }
@@ -2147,6 +2178,61 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     /// <summary>
     /// レベルに応じた色を取得
     /// </summary>
+    // カードの文字に規定フォント(GameFont=PixelMplus/misaki)を適用。正典: Docs/Specifications/デザインテーマ.md
+    private static Font _cardFont;
+    private void ApplyCardFont(TextMesh tm)
+    {
+        if (tm == null) return;
+        if (_cardFont == null) _cardFont = GameFont.Body();
+        if (_cardFont == null) return;
+        tm.font = _cardFont;
+        var mr = tm.GetComponent<MeshRenderer>();
+        if (mr != null && _cardFont.material != null) mr.material = _cardFont.material;
+    }
+
+    // カードレベルを丸数字(①②③…)で表現。色はレベルに応じて変化。規定フォントで描画。
+    private void CreateLevelBadge(GameObject cardObj, int level, int sortingOrder = 104)
+    {
+        string txt = CircledNumber(Mathf.Max(1, level));
+        // 明るめの色(レベル色を白寄りに)
+        Color col = Color.Lerp(GetLevelColor(Mathf.Clamp(level, 1, 5)), Color.white, 0.4f);
+        // 少し右下寄りに配置
+        Vector3 pos = new Vector3(-1.0f, 1.62f, 0f);
+
+        // 影(暗色・右下にずらして後ろ)
+        MakeLevelText(cardObj, "CardLevelShadow", txt, new Color(0f, 0f, 0f, 0.7f),
+            pos + new Vector3(0.08f, -0.08f, 0f), sortingOrder - 1);
+        // 本体(明るい色)
+        MakeLevelText(cardObj, "CardLevel", txt, col, pos, sortingOrder);
+    }
+
+    private void MakeLevelText(GameObject cardObj, string name, string txt, Color color, Vector3 localPos, int sortingOrder)
+    {
+        var obj = new GameObject(name);
+        obj.transform.SetParent(cardObj.transform);
+        obj.transform.localPosition = localPos;
+
+        var mesh = obj.AddComponent<TextMesh>();
+        mesh.text = txt;
+        mesh.fontSize = 48;
+        mesh.characterSize = 0.12f;
+        mesh.anchor = TextAnchor.MiddleCenter;
+        mesh.alignment = TextAlignment.Center;
+        mesh.color = color;
+        mesh.fontStyle = FontStyle.Bold;
+
+        var mr = obj.GetComponent<MeshRenderer>();
+        mr.sortingOrder = sortingOrder;
+        ApplyCardFont(mesh);
+    }
+
+    // 1→① 2→② … 20→⑳。範囲外は素の数字。
+    private static string CircledNumber(int n)
+    {
+        if (n >= 1 && n <= 20) return ((char)(0x2460 + (n - 1))).ToString();
+        return n.ToString();
+    }
+
     private Color GetLevelColor(int level)
     {
         switch (level)

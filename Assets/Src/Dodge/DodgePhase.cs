@@ -50,7 +50,9 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
     {
         if (tuning == null) return;
         playerManager.playerTurnDuration = tuning.playerTurnDuration;
-        playerManager.playerColors = tuning.ResolvePlayerColors();
+        // 色は tuning にあれば採用、無ければ既定色を維持(白フォールバック防止)
+        var cols = tuning.ResolvePlayerColors();
+        if (cols != null && cols.Length > 0) playerManager.playerColors = cols;
         playerManager.playerCallouts = tuning.playerCallouts;
         bombManager.playerColors = playerManager.playerColors;
     }
@@ -90,25 +92,30 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
             // スプライトレンダラーを追加
             var sr = centralField.AddComponent<SpriteRenderer>();
             sr.sprite = CreateDefaultFieldSprite();
-            sr.sortingLayerName = "Field";
-            sr.sortingOrder = 0;
+            // フィールドは最背面。"Field" レイヤーは Enemy/Player より上のため、
+            // ここに置くとボス・弾・自機(Default)を覆ってしまう。最背面の Default に置く。
+            sr.sortingLayerName = "Default";
+            sr.sortingOrder = -100;
             sr.color = new Color(0.2f, 0.2f, 0.3f, 1f);
         }
 
+        // プレイヤーの並びは CardSelectPhase が Inspector で持つ P1..P4 順の配列を使う
+        // (手番インデックスとキャラを一致させるため。順不同なタグ検索フォールバックは持たない)。
         Transform[] players = new Transform[0];
-        try
+        if (cardSelectPhase != null && cardSelectPhase.PlayerTransforms != null && cardSelectPhase.PlayerTransforms.Length > 0)
         {
-            var playerGOs = GameObject.FindGameObjectsWithTag("Player");
-            players = new Transform[playerGOs.Length];
-            for (int i = 0; i < playerGOs.Length; i++) players[i] = playerGOs[i].transform;
+            players = cardSelectPhase.PlayerTransforms;
         }
-        catch (UnityException)
+        else
         {
-            Debug.LogWarning("[DodgePhase] Player tag not found or no players in scene");
-            players = new Transform[0];
+            Debug.LogError("[DodgePhase] CardSelectPhase.playerTransforms が取得できません。プレイヤーキャラの左右演出は行われません。");
         }
 
         visuals.Initialize(enemiesRoot, centralField, players);
+
+        // フィールドは生成時点では隠し、PlayFieldAppear で初めて出す。
+        // (生成直後に全画面級の暗い矩形が表示され、その後さらに拡大表示されて二重に見えるのを防ぐ)
+        if (centralField != null) centralField.SetActive(false);
 
         // 敵の個別取得
         if (enemiesRoot == null)
@@ -131,6 +138,7 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
         // イベント購読
         playerManager.RoundCompleted += OnRoundCompleted;
         playerManager.PlayerHit += OnPlayerHit;
+        playerManager.ActivePlayerSwitched += OnActivePlayerSwitched;
         healthManager.HpDepleted += OnHpDepleted;
 
         if (currentRoutine != null) StopCoroutine(currentRoutine);
@@ -153,10 +161,13 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
     {
         // 1. 敵の上昇
         yield return visuals.PlayEnemyRise();
-        
-        // 2. プレイヤー退避（下へ消える）
+
+        // 2. プレイヤー退避（一度下へ消える）
         yield return visuals.PlayPlayersExitDown();
-        
+
+        // 2.5 左右から入場して待機(以後は左右にゆらゆら浮遊)
+        yield return visuals.PlayPlayersSideEntry();
+
         // 3. 敵（弾幕用）の出現
         var enemyState = FindObjectOfType<EnemyRuntimeState>();
         yield return enemyManager.SpawnAndEnter(enemyState);
@@ -165,29 +176,35 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
         yield return visuals.PlayFieldAppear();
 
         // 5. 自機生成とターン開始
+        SpriteRenderer fieldSr = null;
         if (visuals.centralField != null)
         {
-            var fieldSr = visuals.centralField.GetComponentInChildren<SpriteRenderer>();
+            fieldSr = visuals.centralField.GetComponentInChildren<SpriteRenderer>();
             if (fieldSr != null)
             {
-                playerManager.SpawnPlayerOnField(fieldSr.bounds, true, 100f);
+                playerManager.SpawnPlayerOnField(fieldSr.bounds, true, 1f);
             }
             else
             {
                 Debug.LogWarning("[DodgePhase] Field SpriteRenderer not found, using default bounds");
-                playerManager.SpawnPlayerOnField(new Bounds(Vector3.zero, new Vector3(10, 10, 1)), true, 100f);
+                playerManager.SpawnPlayerOnField(new Bounds(Vector3.zero, new Vector3(10, 10, 1)), true, 1f);
             }
         }
         else
         {
             Debug.LogWarning("[DodgePhase] Central field not found, using default bounds");
-            playerManager.SpawnPlayerOnField(new Bounds(Vector3.zero, new Vector3(10, 10, 1)), true, 100f);
+            playerManager.SpawnPlayerOnField(new Bounds(Vector3.zero, new Vector3(10, 10, 1)), true, 1f);
         }
-        
+
         // 6. HP初期化
         healthManager.Initialize(tuning != null ? tuning.maxHp : 5);
 
-        if (danmakuFrameView != null) danmakuFrameView.SetVisible(true);
+        // 弾幕枠は実フィールドに合わせて表示(スクリーン固定サイズではなくフィールドを投影)
+        if (danmakuFrameView != null)
+        {
+            danmakuFrameView.SetField(fieldSr);
+            danmakuFrameView.SetVisible(true);
+        }
         currentRoutine = null;
     }
 
@@ -217,7 +234,7 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
         yield return visuals.PlayPlayersRestore();
 
         // 4. 常駐敵の復帰
-        yield return visuals.PlayEnemyRestore(0.6f, 600f);
+        yield return visuals.PlayEnemyRestore(0.6f, 8f);
 
         Cleanup();
 
@@ -248,6 +265,15 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
     }
 
     private void OnRoundCompleted() => EndDodge();
+
+    // 手番交代: 前のキャラは光となって戻り、次のキャラが光になって自機の丸へ入り込む
+    private void OnActivePlayerSwitched(int index)
+    {
+        if (visuals == null) return;
+        var cols = (playerManager != null) ? playerManager.playerColors : null;
+        Color col = (cols != null && index >= 0 && index < cols.Length) ? cols[index] : Color.white;
+        visuals.SetActiveCharacterOnField(index, playerManager.OnFieldPlayer, col);
+    }
 
     private void OnPlayerHit(PlayerOnFieldHittable h)
     {
@@ -280,6 +306,7 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
         healthManager.Cleanup();
         playerManager.RoundCompleted -= OnRoundCompleted;
         playerManager.PlayerHit -= OnPlayerHit;
+        playerManager.ActivePlayerSwitched -= OnActivePlayerSwitched;
         healthManager.HpDepleted -= OnHpDepleted;
         if (danmakuFrameView != null) danmakuFrameView.SetVisible(false);
         enabled = false;

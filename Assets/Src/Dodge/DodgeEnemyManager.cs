@@ -8,8 +8,9 @@ public class DodgeEnemyManager : MonoBehaviour
 {
     [Header("設定")]
     public GameObject enemyOnFieldPrefab;
-    public Vector3 spawnPosition = new Vector3(0f, 256f, 0f);
-    public float entryHeight = 600f;
+    // ワールド座標。フィールドはカメラ中央(0,0)・可視域 y∈[-5,5] なので、上寄りの y=3 に配置。
+    public Vector3 spawnPosition = new Vector3(0f, 3f, 0f);
+    public float entryHeight = 8f;   // 画面外(上)から降下する高さ(ワールド単位)
     public float appearDuration = 0.6f;
 
     [Header("参照")]
@@ -21,23 +22,21 @@ public class DodgeEnemyManager : MonoBehaviour
 
     public IEnumerator SpawnAndEnter(EnemyRuntimeState enemyState)
     {
+        if (enemyOnFieldPrefab == null)
+        {
+            Debug.LogError("[DodgeEnemyManager] enemyOnFieldPrefab が未設定です。弾幕ボスのプレハブ(スプライト付き)を Inspector で設定してください。");
+            yield break;
+        }
+
         if (Instance != null) Destroy(Instance);
 
         Vector3 startPos = spawnPosition + Vector3.up * entryHeight;
-        if (enemyOnFieldPrefab != null)
-        {
-            Instance = Instantiate(enemyOnFieldPrefab, startPos, Quaternion.identity);
-        }
-        else
-        {
-            Instance = new GameObject("EnemyOnField_Auto", typeof(SpriteRenderer));
-            Instance.transform.position = startPos;
-        }
+        Instance = Instantiate(enemyOnFieldPrefab, startPos, Quaternion.identity);
 
-        var controller = Instance.GetComponent<EnemyOnFieldController>() ?? Instance.AddComponent<EnemyOnFieldController>();
-        var sr = Instance.GetComponentInChildren<SpriteRenderer>() ?? Instance.AddComponent<SpriteRenderer>();
-        if (sr.sprite == null) sr.sprite = CreatePlaceholderSprite();
-        controller.SetUpSprite(sr.sprite);
+        // プレハブの見た目(Visual子のスプライト)をそのまま使う。前面に出すため sortingOrder のみ設定。
+        // ※ SetUpSprite はルートに別スプライトを足して二重表示になるため呼ばない。サイズはプレハブ側で調整。
+        var sr = Instance.GetComponentInChildren<SpriteRenderer>();
+        if (sr != null) sr.sortingOrder = 10;
 
         float t = 0f;
         while (t < appearDuration)
@@ -54,7 +53,12 @@ public class DodgeEnemyManager : MonoBehaviour
     private void StartPatterns(EnemyRuntimeState enemyState)
     {
         if (danmakuManager == null) danmakuManager = FindObjectOfType<DanmakuManager>();
-        
+        if (danmakuManager == null)
+        {
+            Debug.LogError("[DodgeEnemyManager] DanmakuManager がシーンにありません。DanmakuManager を配置し、bulletPrefab を設定してください。弾幕を開始できません。");
+            return;
+        }
+
         DanmakuPattern = Instance.GetComponent<BossDanmakuPattern>() ?? Instance.AddComponent<BossDanmakuPattern>();
         DanmakuPattern.danmakuManager = danmakuManager;
         DanmakuPattern.StartPattern();
@@ -83,15 +87,6 @@ public class DodgeEnemyManager : MonoBehaviour
             yield return null;
         }
         Destroy(Instance);
-    }
-
-    private Sprite CreatePlaceholderSprite()
-    {
-        var tex = new Texture2D(256, 256);
-        var cols = new Color32[256 * 256];
-        for (int i = 0; i < cols.Length; i++) cols[i] = Color.white;
-        tex.SetPixels32(cols); tex.Apply();
-        return Sprite.Create(tex, new Rect(0, 0, 256, 256), new Vector2(0.5f, 0.5f));
     }
 
     public void Cleanup()

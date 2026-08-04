@@ -1581,7 +1581,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 318360233}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7b652829dca27444083fe1b9f4d42841, type: 3}
+  m_Script: {fileID: 11500000, guid: 245cf51e1d2104e6d9f9c8ffa1a499ae, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UnderTheSpotlight.FloatingCharacterMotion
   amplitude: 4.5
@@ -2834,7 +2834,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 617851804}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5983667f3893c425682e85e480ecabc7, type: 3}
+  m_Script: {fileID: 11500000, guid: 8edc589270d184a1bac44a69df8f8a17, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterSelectView
   characterCards:
@@ -3496,7 +3496,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 777160711}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6f88f3d7696ec4390a08a7106ea129c6, type: 3}
+  m_Script: {fileID: 11500000, guid: 4cb8176ff1dd8494daf20a5ee2ead734, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterSpotlightView
   characterImage: {fileID: 318360235}
@@ -6534,7 +6534,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 1378793728}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5e792952e4c84c20ae987ff2ccde2a6, type: 3}
+  m_Script: {fileID: 11500000, guid: 4c6c05f41d63d40b9803a2c50cf7035d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterSelectSceneController
   availableCharacters:
@@ -9916,7 +9916,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 2037756981}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 74c4b5ab0ba064ec6ae5ff8687e9f384, type: 3}
+  m_Script: {fileID: 11500000, guid: 9ec99ff5dc44d430ca99786c62c67ed1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSelectionListView
   playerSlots:
@@ -11948,7 +11948,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108336376655083}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522616451695164}
@@ -11976,7 +11976,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108336235633900}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522616314884667}
@@ -12004,7 +12004,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108336207167469}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522616286400826}
@@ -12032,7 +12032,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108336659799829}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522616705495490}
@@ -12060,7 +12060,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108338026899231}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522615925098952}
@@ -12088,7 +12088,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108337955760025}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522615853697358}
@@ -12116,7 +12116,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108337968531619}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522615866484340}
@@ -12144,7 +12144,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5914108337759109585}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7890abcd1234567890abcdef12345678, type: 3}
+  m_Script: {fileID: 11500000, guid: d32aaa5d6745f48788538fdbf34c08ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCardView
   cardBackground: {fileID: 5842522615657066246}

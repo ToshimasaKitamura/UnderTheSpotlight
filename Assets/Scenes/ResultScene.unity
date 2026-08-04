@@ -282,11 +282,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 400000010}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f6789012345678abcdef012345678901, type: 3}
+  m_Script: {fileID: 11500000, guid: e5f98820da97e4485bd654b4de4ba444, type: 3}
   m_Name:
   m_EditorClassIdentifier: '::'
   victoryText: VICTORY!
-  defeatText: DEFEAT...
+  defeatText: GAME OVER
   resultFontSize: 64
   guideFontSize: 28
 --- !u!1660057539 &9223372036854775807

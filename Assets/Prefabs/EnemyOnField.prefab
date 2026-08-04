@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 4935713350410318235}
   - component: {fileID: 2103134936421472887}
-  - component: {fileID: 8630009057292199362}
   m_Layer: 0
   m_Name: Visual
   m_TagString: Untagged
@@ -28,7 +27,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 150, y: 150, z: 1}
+  m_LocalScale: {x: 2, y: 2, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 539334275081250627}
@@ -92,24 +91,6 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
---- !u!114 &8630009057292199362
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 940589550729966126}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7b652829dca27444083fe1b9f4d42841, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::UnderTheSpotlight.FloatingCharacterMotion
-  amplitude: 2
-  frequency: 0.5
-  randomizePhase: 1
-  enableRotation: 0
-  rotationAmplitude: 2.5
-  paused: 0
 --- !u!1 &1379937935230777061
 GameObject:
   m_ObjectHideFlags: 0

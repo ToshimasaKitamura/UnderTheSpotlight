@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// プレイヤー切替時に画面中央上に大きなセリフ風 UI を表示するアナウンサー。
-/// PixelFontRendererを使用して8bitドット風フォントで描画。
+/// 日本語の文字化けを避けるため、IMGUI ネイティブの GUI.Label(美咲/OSフォント)で描画する。
 /// </summary>
 public class PlayerSwitchAnnouncer : MonoBehaviour
 {
@@ -35,29 +35,14 @@ public class PlayerSwitchAnnouncer : MonoBehaviour
     private float currentAlpha = 0f;
     private bool isVisible = false;
 
-    // テクスチャキャッシュ
-    private Texture2D messageTexture;
-    private Texture2D shadowTexture;
-    private string cachedMessage = "";
-    private Color cachedColor = Color.clear;
+    // 日本語対応フォント。IMGUI ネイティブ描画(GUI.Label)で使うことで文字化けを防ぐ。
+    private Font uiFont;
 
-    void OnDestroy()
+    void Awake()
     {
-        ClearTextures();
-    }
-
-    private void ClearTextures()
-    {
-        if (messageTexture != null)
-        {
-            Destroy(messageTexture);
-            messageTexture = null;
-        }
-        if (shadowTexture != null)
-        {
-            Destroy(shadowTexture);
-            shadowTexture = null;
-        }
+        // 8bit風の美咲フォント(日本語)。無ければ本文フォント(OS/GameTuning)にフォールバック。
+        uiFont = Resources.Load<Font>("Fonts/misaki_gothic");
+        if (uiFont == null) uiFont = GameFont.Body();
     }
 
     public void Announce(int playerIndex)
@@ -77,35 +62,8 @@ public class PlayerSwitchAnnouncer : MonoBehaviour
         currentScale = 0f;
         isVisible = true;
 
-        // テクスチャを更新
-        UpdateTextures();
-
         if (animRoutine != null) StopCoroutine(animRoutine);
         animRoutine = StartCoroutine(AnimateMessage(baseColor));
-    }
-
-    private void UpdateTextures()
-    {
-        if (currentMessage == cachedMessage && currentColor == cachedColor && messageTexture != null)
-            return;
-
-        ClearTextures();
-
-        // メインテクスチャ
-        messageTexture = PixelFontRenderer.RenderText(currentMessage, currentColor, fontScale);
-        // 影用テクスチャ（黒）
-        shadowTexture = PixelFontRenderer.RenderText(currentMessage, new Color(0f, 0f, 0f, 0.85f), fontScale);
-
-        // テクスチャが正しく生成されたか確認
-        if (messageTexture == null)
-        {
-            Debug.LogWarning("[PlayerSwitchAnnouncer] テクスチャの生成に失敗しました");
-            isVisible = false;
-            return;
-        }
-
-        cachedMessage = currentMessage;
-        cachedColor = currentColor;
     }
 
     private IEnumerator AnimateMessage(Color baseColor)
@@ -156,31 +114,36 @@ public class PlayerSwitchAnnouncer : MonoBehaviour
 
     void OnGUI()
     {
-        if (!isVisible || messageTexture == null || currentAlpha <= 0f) return;
+        if (!isVisible || currentAlpha <= 0f || string.IsNullOrEmpty(currentMessage)) return;
 
-        // テクスチャサイズにスケール適用
-        float w = messageTexture.width * currentScale;
-        float h = messageTexture.height * currentScale;
+        // IMGUI ネイティブ描画で日本語を正しく表示(文字化け対策)
+        int fontSize = Mathf.Max(1, Mathf.RoundToInt(8f * fontScale * Mathf.Max(0.01f, currentScale)));
 
-        // 画面中央上部に配置
-        float x = (Screen.width - w) / 2f;
-        float y = Screen.height * 0.18f; // 上から18%の位置
-
-        // アルファ適用
-        Color guiColor = GUI.color;
-        GUI.color = new Color(1f, 1f, 1f, currentAlpha);
-
-        // 影を描画（オフセット）
-        if (shadowTexture != null)
+        var style = new GUIStyle
         {
-            float shadowOffset = 4f * currentScale;
-            GUI.DrawTexture(new Rect(x + shadowOffset, y + shadowOffset, w, h), shadowTexture);
-        }
+            font = uiFont,
+            fontSize = fontSize,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap = false,
+        };
 
-        // メインテキスト描画
-        GUI.DrawTexture(new Rect(x, y, w, h), messageTexture);
+        var content = new GUIContent(currentMessage);
+        Vector2 sz = style.CalcSize(content);
 
-        GUI.color = guiColor;
+        float x = (Screen.width - sz.x) / 2f;
+        float y = Screen.height * 0.18f;
+        var rect = new Rect(x, y, sz.x, sz.y);
+
+        // 影
+        var shadow = new GUIStyle(style);
+        shadow.normal.textColor = new Color(0f, 0f, 0f, 0.7f * currentAlpha);
+        float off = Mathf.Max(2f, fontSize * 0.06f);
+        GUI.Label(new Rect(rect.x + off, rect.y + off, rect.width, rect.height), content, shadow);
+
+        // 本体
+        style.normal.textColor = new Color(currentColor.r, currentColor.g, currentColor.b, currentAlpha);
+        GUI.Label(rect, content, style);
     }
 
     private static float EaseOutBack(float x)

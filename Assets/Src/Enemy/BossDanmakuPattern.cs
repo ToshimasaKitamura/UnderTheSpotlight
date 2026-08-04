@@ -14,7 +14,7 @@ public class BossDanmakuPattern : MonoBehaviour
     [Tooltip("発射間隔(秒)。")]
     public float fireInterval = 1.0f;
     [Tooltip("弾速(ワールド単位/秒)。")]
-    public float bulletSpeed = 200f;
+    public float bulletSpeed = 3f;
     [Tooltip("発射ごとに加える角度オフセット(度)。回転する弾幕。")]
     public float ringAngleStepDeg = 7f;
     [Tooltip("最初に撃つまでの遅延(秒)。")]

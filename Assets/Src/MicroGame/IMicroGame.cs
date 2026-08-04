@@ -30,6 +30,13 @@ public class MicroGameContext
     /// ActionCommandPhase が登録し、即座にエンタメ演出 + 部位ダメージを適用する。
     /// </summary>
     public Action<int> OnPlayerAttack;
+
+    /// <summary>
+    /// グループ式で攻撃が発生した「発生源スクリーン座標」(ゲージ末端など)。
+    /// OnPlayerAttack を呼ぶ直前にゲーム側が set する。演出(ダメージ光)の始点に使う。
+    /// </summary>
+    public Vector2 LastAttackScreenPos;
+    public bool HasLastAttackScreenPos;
 }
 
 /// <summary>

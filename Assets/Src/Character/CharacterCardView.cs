@@ -40,10 +40,16 @@ public void SetCharacterData(CharacterData data)
     {
         if (data == null) return;
 
-        // キャラクター名（リスト表示用にはローマ字を優先）
+        // Unity 6 では旧既定フォント(Arial)が無く uGUI Text が空白になるため、規定フォントを明示設定。
+        EnsureFont(characterNameText);
+        EnsureFont(roleText);
+        EnsureFont(description1Text);
+        EnsureFont(description2Text);
+
+        // キャラクター名（カードには表示名を大きく載せる）
         if (characterNameText != null)
         {
-            characterNameText.text = !string.IsNullOrEmpty(data.romajiName) ? data.romajiName : data.displayName;
+            characterNameText.text = data.displayName;
         }
 
         // 名前バーの背景色
@@ -132,6 +138,15 @@ public void SetCharacterData(CharacterData data)
                 selectionBorder.color = normalBorderColor;
             }
         }
+    }
+
+    // 規定フォント(GameFont=misaki/PixelMplus)を Text に設定。正典: Docs/Specifications/デザインテーマ.md
+    private static Font _cardFont;
+    private static void EnsureFont(Text t)
+    {
+        if (t == null) return;
+        if (_cardFont == null) _cardFont = GameFont.Body();
+        if (_cardFont != null) t.font = _cardFont;
     }
 
     private static string GetRoleText(CharacterRole role)

@@ -10,7 +10,14 @@ public class DodgePlayerManager : MonoBehaviour
 {
     [Header("設定")]
     public GameObject playerOnFieldPrefab;
-    public Color[] playerColors;
+    // 既定のプレイヤーカラー(tuning未設定でも自機が色付くように)
+    public Color[] playerColors = new Color[]
+    {
+        new Color(1f, 0.35f, 0.35f, 1f),   // P1 赤
+        new Color(0.35f, 0.6f, 1f, 1f),    // P2 青
+        new Color(0.35f, 1f, 0.4f, 1f),    // P3 緑
+        new Color(1f, 0.85f, 0.35f, 1f),   // P4 黄
+    };
     public float playerTurnDuration = 4f;
     public string[] playerCallouts;
 
@@ -24,13 +31,25 @@ public class DodgePlayerManager : MonoBehaviour
 
     public event Action RoundCompleted;
     public event Action<PlayerOnFieldHittable> PlayerHit;
+    /// <summary>手番プレイヤーが切り替わったとき(index)。演出連携用。</summary>
+    public event Action<int> ActivePlayerSwitched;
 
     public int CurrentActivePlayer => TurnManager != null ? TurnManager.CurrentActivePlayer : -1;
+
+    /// <summary>弾幕フィールド上の自機(丸)の Transform。無ければ null。</summary>
+    public Transform OnFieldPlayer =>
+        (playerOnFieldInstances != null && playerOnFieldInstances.Count > 0 && playerOnFieldInstances[0] != null)
+            ? playerOnFieldInstances[0].transform : null;
 
     public void SpawnPlayerOnField(Bounds bounds, bool enableBounds, float bottomMargin)
     {
         Cleanup();
-        if (playerOnFieldPrefab == null) return;
+
+        if (playerOnFieldPrefab == null)
+        {
+            Debug.LogError("[DodgePlayerManager] playerOnFieldPrefab が未設定です。自機(球体)のプレハブを Inspector で設定してください。自機を生成できません。");
+            return;
+        }
 
         Vector3 spawnPos = new Vector3(bounds.center.x, bounds.min.y + bottomMargin, 0f);
         var go = Instantiate(playerOnFieldPrefab, spawnPos, Quaternion.identity);
@@ -80,6 +99,7 @@ public class DodgePlayerManager : MonoBehaviour
     {
         if (ActivePlayerRing != null) ActivePlayerRing.SetActivePlayer(index);
         if (Announcer != null) Announcer.Announce(index);
+        ActivePlayerSwitched?.Invoke(index);
     }
 
     private void OnRoundCompletedInternal() => RoundCompleted?.Invoke();

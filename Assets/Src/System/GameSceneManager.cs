@@ -7,7 +7,28 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public class GameSceneManager : MonoBehaviour
 {
-    public static GameSceneManager Instance { get; private set; }
+    private static GameSceneManager _instance;
+
+    /// <summary>
+    /// シングルトン。存在しなければ自動生成する(バトルシーンを直接再生した時などでも
+    /// ゲームオーバー遷移が機能するように)。
+    /// </summary>
+    public static GameSceneManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<GameSceneManager>();
+                if (_instance == null)
+                {
+                    var go = new GameObject("GameSceneManager");
+                    _instance = go.AddComponent<GameSceneManager>();   // Awake で _instance/DontDestroyOnLoad 設定
+                }
+            }
+            return _instance;
+        }
+    }
 
     /// <summary>
     /// シーン名の定数定義
@@ -32,12 +53,12 @@ public class GameSceneManager : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
-        Instance = this;
+        _instance = this;
         DontDestroyOnLoad(gameObject);
     }
 

@@ -18,8 +18,10 @@ public class DodgeHealthManager : MonoBehaviour
 
         if (SharedHp != null)
         {
-            SharedHp.maxHp = maxHp;
-            SharedHp.ResetHp();
+            // HP はバトル開始(シーンロード)時にのみ満タンにする。
+            // 各弾幕ではリセットせず持ち越し、蓄積したダメージで0になったらゲームオーバー。
+            if (SharedHp.maxHp <= 0) SharedHp.maxHp = maxHp;
+            SharedHp.OnDepleted -= OnHpDepleted;   // 二重購読防止
             SharedHp.OnDepleted += OnHpDepleted;
         }
     }

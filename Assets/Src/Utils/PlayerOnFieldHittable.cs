@@ -9,7 +9,7 @@ using UnityEngine;
 public class PlayerOnFieldHittable : MonoBehaviour
 {
     [Tooltip("被弾判定半径(ワールド単位)。")]
-    public float radius = 30f;
+    public float radius = 0.15f;
     [Tooltip("被弾後の無敵時間(秒)。この間は Hit が再発火しない。")]
     public float invulnerabilityDuration = 0.8f;
 

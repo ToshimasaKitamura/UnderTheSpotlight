@@ -11,15 +11,16 @@ using UnityEngine.UI;
 /// </summary>
 public class WorldMapView : MonoBehaviour
 {
-    [Header("8bit カラー設定（GameColorScheme ベース）")]
-    public Color bgColor1 = new Color(0.12f, 0.05f, 0.18f);     // PrimaryDark
-    public Color bgColor2 = new Color(0.06f, 0.02f, 0.1f);      // より暗い紫
-    public Color nodeColor = new Color(0.45f, 0.25f, 0.55f);    // PrimaryLight
-    public Color nodeSelectColor = new Color(1f, 0.9f, 0.3f);   // AccentBright
-    public Color nodeClearColor = new Color(0.4f, 0.85f, 0.5f); // HpFull(緑)
-    public Color pathColor = new Color(0.5f, 0.35f, 0.6f);      // FrameOuter
-    public Color textColor = new Color(0.95f, 0.92f, 1f);       // TextPrimary
-    public Color headerColor = new Color(0.9f, 0.75f, 0.2f);    // AccentMid
+    [Header("8bit カラー設定（GameColorScheme に一元化）")]
+    // 正典: Docs/Specifications/デザインテーマ.md。実行時生成のため既定値をテーマから取得。
+    public Color bgColor1 = GameColorScheme.BackgroundTop;
+    public Color bgColor2 = GameColorScheme.BackgroundBottom;
+    public Color nodeColor = GameColorScheme.Main;          // 未到達ノード
+    public Color nodeSelectColor = GameColorScheme.Accent;  // 選択中
+    public Color nodeClearColor = GameColorScheme.Success;  // クリア済み
+    public Color pathColor = GameColorScheme.Sub;           // ノード間のパス
+    public Color textColor = GameColorScheme.TextOnDark;
+    public Color headerColor = GameColorScheme.Accent;
 
     [Header("装飾カラー")]
     public Color nebulaColor1 = new Color(0.4f, 0.2f, 0.6f, 0.3f);   // 星雲色1

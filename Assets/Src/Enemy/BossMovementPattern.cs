@@ -9,9 +9,9 @@ using UnityEngine;
 public class BossMovementPattern : MonoBehaviour
 {
     [Tooltip("中心からの左右移動範囲(ワールド単位)。")]
-    public float horizontalRange = 250f;
+    public float horizontalRange = 3f;
     [Tooltip("中心からの上下移動範囲(ワールド単位)。")]
-    public float verticalRange = 60f;
+    public float verticalRange = 1f;
     [Tooltip("次の目標位置に到達するまでの時間(秒)。")]
     public float moveDuration = 1.2f;
     [Tooltip("目標到達後の停止時間(秒)。")]

@@ -2,304 +2,331 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// タイトルシーンのコントローラー。
-/// メニュー選択とシーン遷移を管理します。
+/// タイトルシーンのコントローラー（仮実装・8bitドット絵風）。
+/// ゲームオーバー画面(ResultSceneController)と同じ描画スタイルで、
+/// タイトルロゴ・スター背景・メニューボタンを表示し、シーン遷移を行います。
 /// </summary>
 public class TitleSceneController : MonoBehaviour
 {
-    [Header("設定")]
-    [Tooltip("タイトル表示後、入力を受け付けるまでの待機時間")]
-    [SerializeField] private float inputDelay = 1.0f;
-
-    [Header("参照")]
-    [SerializeField] private TitleView titleView;
-
     public enum TitleState
     {
-        FadeIn,
         WaitForStart,
-        Menu,
-        FadeOut
+        Menu
     }
 
-    public enum MenuSelection
-    {
-        GameStart,
-        Options,
-        Exit
-    }
+    [Header("表示設定")]
+    [SerializeField] private string titleText = "UNDER THE SPOTLIGHT";
+    [SerializeField] private string subtitleText = "- 4人協力弾幕アクション -";
 
-    private TitleState currentState;
-    private MenuSelection currentSelection;
+    // 色はテーマ(GameColorScheme)に一元化。正典: Docs/Specifications/デザインテーマ.md
+
+    public TitleState CurrentState { get; private set; } = TitleState.WaitForStart;
+    public float FadeProgress { get; private set; } = 0f;
+    public int CurrentSelection { get; private set; } = 0;
+
+    private float inputDelay = 0.8f;
     private float elapsedTime;
-    private float fadeProgress;
+    private bool canAcceptInput;
 
-    // 入力クールダウン
-    private float inputCooldown;
-    private const float INPUT_COOLDOWN_TIME = 0.15f;
+    private float fadeTimer = 0f;
+    private float fadeDuration = 0.5f;
 
-    public TitleState CurrentState => currentState;
-    public MenuSelection CurrentSelection => currentSelection;
-    public float FadeProgress => fadeProgress;
+    private bool wasStickUp = false;
+    private bool wasStickDown = false;
+
+    // テクスチャ
+    private Texture2D bgTexture;
+    private Texture2D titleTexture;
+
+    // スター(背景演出)
+    private float starTimer;
+    private Vector2[] starPositions;
+    private float[] starPhases;
+
+    private int pixelScale = 3;
 
     private void Start()
     {
-        elapsedTime = 0f;
-        fadeProgress = 0f;
-        currentState = TitleState.FadeIn;
-        currentSelection = MenuSelection.GameStart;
-        inputCooldown = 0f;
-
-        // GameSceneManager がなければ生成
+        // バトルシーンを直接再生した時などでも遷移が機能するよう、無ければ生成しておく。
         if (GameSceneManager.Instance == null)
         {
-            var go = new GameObject("GameSceneManager");
-            go.AddComponent<GameSceneManager>();
+            Debug.LogWarning("[TitleSceneController] GameSceneManager が見つからないため自動生成します。");
         }
 
-        // TitleViewの参照を自動取得
-        if (titleView == null)
+        elapsedTime = 0f;
+        canAcceptInput = false;
+        pixelScale = Mathf.Max(2, Screen.height / 360);
+
+        CreateTextures();
+        InitializeStars();
+    }
+
+    private void OnDestroy()
+    {
+        if (bgTexture != null) Destroy(bgTexture);
+        if (titleTexture != null) Destroy(titleTexture);
+    }
+
+    private void CreateTextures()
+    {
+        bgTexture = PixelFontRenderer.CreateDitheredGradient(
+            Screen.width / 4, Screen.height / 4,
+            GameColorScheme.BackgroundTop, GameColorScheme.BackgroundBottom, 2);
+
+        // タイトルロゴは ASCII のためピクセルフォントで描画(GAME OVER と同じ方式)。
+        titleTexture = PixelFontRenderer.RenderText(titleText, GameColorScheme.Accent, pixelScale + 2);
+    }
+
+    private void InitializeStars()
+    {
+        int starCount = 30;
+        starPositions = new Vector2[starCount];
+        starPhases = new float[starCount];
+
+        System.Random rng = new System.Random(2026);
+        for (int i = 0; i < starCount; i++)
         {
-            titleView = GetComponent<TitleView>();
+            starPositions[i] = new Vector2((float)rng.NextDouble(), (float)rng.NextDouble());
+            starPhases[i] = (float)rng.NextDouble() * Mathf.PI * 2f;
         }
     }
 
     private void Update()
     {
-        // クールダウン更新
-        if (inputCooldown > 0f)
+        starTimer += Time.deltaTime;
+
+        if (fadeTimer < fadeDuration)
         {
-            inputCooldown -= Time.deltaTime;
+            fadeTimer += Time.deltaTime;
+            FadeProgress = Mathf.Clamp01(fadeTimer / fadeDuration);
         }
 
-        switch (currentState)
+        if (!canAcceptInput)
         {
-            case TitleState.FadeIn:
-                UpdateFadeIn();
-                break;
-            case TitleState.WaitForStart:
-                UpdateWaitForStart();
-                break;
-            case TitleState.Menu:
-                UpdateMenu();
-                break;
-            case TitleState.FadeOut:
-                UpdateFadeOut();
-                break;
-        }
-    }
-
-    private void UpdateFadeIn()
-    {
-        elapsedTime += Time.deltaTime;
-        fadeProgress = Mathf.Clamp01(elapsedTime / inputDelay);
-
-        if (elapsedTime >= inputDelay)
-        {
-            currentState = TitleState.WaitForStart;
-            fadeProgress = 1f;
-        }
-    }
-
-    private void UpdateWaitForStart()
-    {
-        // 任意のキー/ボタンでメニューへ
-        if (AnyInputPressed())
-        {
-            currentState = TitleState.Menu;
-            inputCooldown = INPUT_COOLDOWN_TIME;
-        }
-    }
-
-    private void UpdateMenu()
-    {
-        if (inputCooldown > 0f) return;
-
-        // 上下でメニュー選択
-        float vertical = GetVerticalInput();
-        if (vertical > 0.5f)
-        {
-            SelectPrevious();
-            inputCooldown = INPUT_COOLDOWN_TIME;
-        }
-        else if (vertical < -0.5f)
-        {
-            SelectNext();
-            inputCooldown = INPUT_COOLDOWN_TIME;
+            elapsedTime += Time.deltaTime;
+            if (elapsedTime >= inputDelay) canAcceptInput = true;
+            return;
         }
 
-        // 決定
-        if (ConfirmPressed())
+        var kb = Keyboard.current;
+        var gp = Gamepad.current;
+
+        bool confirmPressed = false;
+        bool backPressed = false;
+        bool upPressed = false;
+        bool downPressed = false;
+
+        bool stickUp = false;
+        bool stickDown = false;
+        if (gp != null)
         {
-            ExecuteSelection();
-            inputCooldown = INPUT_COOLDOWN_TIME;
+            float stickY = gp.leftStick.y.ReadValue();
+            stickUp = stickY > 0.5f;
+            stickDown = stickY < -0.5f;
         }
 
-        // キャンセルで戻る
-        if (CancelPressed())
+        if (kb != null)
         {
-            currentState = TitleState.WaitForStart;
-            inputCooldown = INPUT_COOLDOWN_TIME;
+            confirmPressed |= kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame;
+            backPressed |= kb.escapeKey.wasPressedThisFrame || kb.xKey.wasPressedThisFrame;
+            upPressed |= kb.upArrowKey.wasPressedThisFrame;
+            downPressed |= kb.downArrowKey.wasPressedThisFrame;
         }
-    }
 
-    private void UpdateFadeOut()
-    {
-        elapsedTime += Time.deltaTime;
-        fadeProgress = 1f - Mathf.Clamp01(elapsedTime / 0.5f);
-
-        if (elapsedTime >= 0.5f)
+        if (gp != null)
         {
-            // 選択に応じて遷移
-            switch (currentSelection)
+            confirmPressed |= gp.buttonSouth.wasPressedThisFrame || gp.startButton.wasPressedThisFrame;
+            backPressed |= gp.buttonEast.wasPressedThisFrame || gp.selectButton.wasPressedThisFrame;
+            upPressed |= gp.dpad.up.wasPressedThisFrame || (stickUp && !wasStickUp);
+            downPressed |= gp.dpad.down.wasPressedThisFrame || (stickDown && !wasStickDown);
+
+            wasStickUp = stickUp;
+            wasStickDown = stickDown;
+        }
+
+        bool anyKeyPressed = false;
+        if (kb != null && kb.anyKey.wasPressedThisFrame)
+        {
+            anyKeyPressed = true;
+        }
+        if (gp != null)
+        {
+            if (gp.buttonSouth.wasPressedThisFrame ||
+                gp.buttonEast.wasPressedThisFrame ||
+                gp.buttonWest.wasPressedThisFrame ||
+                gp.buttonNorth.wasPressedThisFrame ||
+                gp.startButton.wasPressedThisFrame ||
+                gp.selectButton.wasPressedThisFrame ||
+                gp.dpad.up.wasPressedThisFrame ||
+                gp.dpad.down.wasPressedThisFrame ||
+                gp.dpad.left.wasPressedThisFrame ||
+                gp.dpad.right.wasPressedThisFrame)
             {
-                case MenuSelection.GameStart:
-                    GameSceneManager.Instance.GoToWorldMap();
-                    break;
-                case MenuSelection.Exit:
+                anyKeyPressed = true;
+            }
+        }
+
+        if (CurrentState == TitleState.WaitForStart)
+        {
+            if (anyKeyPressed || confirmPressed)
+            {
+                CurrentState = TitleState.Menu;
+                CurrentSelection = 0;
+            }
+        }
+        else if (CurrentState == TitleState.Menu)
+        {
+            if (upPressed)
+            {
+                CurrentSelection = (CurrentSelection - 1 + 3) % 3;
+            }
+            else if (downPressed)
+            {
+                CurrentSelection = (CurrentSelection + 1) % 3;
+            }
+            else if (confirmPressed)
+            {
+                ExecuteMenuAction(CurrentSelection);
+            }
+            else if (backPressed)
+            {
+                CurrentState = TitleState.WaitForStart;
+            }
+        }
+    }
+
+    private void ExecuteMenuAction(int selection)
+    {
+        switch (selection)
+        {
+            case 0: // START GAME
+                StartGame();
+                break;
+            case 1: // OPTIONS
+                Debug.Log("[TitleSceneController] OPTIONS Selected (Not implemented)");
+                break;
+            case 2: // EXIT
+                QuitGame();
+                break;
+        }
+    }
+
+    private void StartGame()
+    {
+        var gm = GameSceneManager.Instance;
+        if (gm == null)
+        {
+            Debug.LogError("[TitleSceneController] GameSceneManager.Instance が取得できず、ワールドマップへ遷移できません。");
+            return;
+        }
+        gm.GoToWorldMap();
+    }
+
+    private void OnGUI()
+    {
+        if (GetComponent<TitleView>() != null) return;
+
+        DrawBackground();
+        DrawStars();
+        DrawTitle();
+        DrawButtons();
+    }
+
+    private void DrawBackground()
+    {
+        if (bgTexture == null) return;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bgTexture, ScaleMode.StretchToFill);
+    }
+
+    private void DrawStars()
+    {
+        if (starPositions == null) return;
+        for (int i = 0; i < starPositions.Length; i++)
+        {
+            float twinkle = (Mathf.Sin(starTimer * 2f + starPhases[i]) + 1f) * 0.5f;
+            if (twinkle < 0.3f) continue;
+
+            float x = starPositions[i].x * Screen.width;
+            float y = starPositions[i].y * Screen.height * 0.85f;
+            float size = pixelScale * (1f + twinkle);
+
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 0.9f, twinkle * 0.7f);
+            GUI.DrawTexture(new Rect(x, y, size, size), Texture2D.whiteTexture);
+            GUI.color = prev;
+        }
+    }
+
+    private void DrawTitle()
+    {
+        if (titleTexture == null) return;
+
+        float centerX = Screen.width / 2f;
+        float y = Screen.height * 0.30f;
+        float scale = Mathf.Min(1f, (Screen.width * 0.86f) / titleTexture.width);
+        float w = titleTexture.width * scale;
+        float h = titleTexture.height * scale;
+
+        GUI.DrawTexture(new Rect(centerX - w / 2f, y - h / 2f, w, h), titleTexture);
+
+        // サブタイトル(日本語)は misaki フォントの GUI.Label で描画。
+        var style = SubtitleStyle();
+        var size = style.CalcSize(new GUIContent(subtitleText));
+        GUI.Label(new Rect(centerX - size.x / 2f, y + h / 2f + pixelScale * 4, size.x, size.y), subtitleText, style);
+    }
+
+    private GUIStyle cachedSubtitleStyle;
+    private GUIStyle SubtitleStyle()
+    {
+        if (cachedSubtitleStyle == null)
+        {
+            cachedSubtitleStyle = new GUIStyle(GUI.skin.label);
+            var f = GameFont.Body();
+            if (f != null) cachedSubtitleStyle.font = f;
+            cachedSubtitleStyle.fontSize = Mathf.Max(14, pixelScale * 6);
+            cachedSubtitleStyle.normal.textColor = GameColorScheme.TextMuted;
+            cachedSubtitleStyle.alignment = TextAnchor.MiddleCenter;
+        }
+        return cachedSubtitleStyle;
+    }
+
+    private GUIStyle cachedBtnStyle;
+    private GUIStyle ButtonStyle()
+    {
+        if (cachedBtnStyle == null)
+        {
+            cachedBtnStyle = new GUIStyle(GUI.skin.button);
+            var f = GameFont.Body();          // 日本語対応フォント(IMGUIネイティブ)
+            if (f != null) cachedBtnStyle.font = f;
+            cachedBtnStyle.fontSize = Mathf.Max(18, pixelScale * 7);
+            cachedBtnStyle.fontStyle = FontStyle.Bold;
+        }
+        return cachedBtnStyle;
+    }
+
+    private static Rect BtnRect(float cx, float y, float w, float h) => new Rect(cx - w / 2f, y, w, h);
+
+    private void DrawButtons()
+    {
+        if (!canAcceptInput) return;
+
+        var style = ButtonStyle();
+        float cx = Screen.width / 2f;
+        float bw = Mathf.Min(Screen.width * 0.55f, 400f);
+        float bh = Mathf.Max(48f, Screen.height * 0.075f);
+        float gap = bh * 0.28f;
+        float y = Screen.height * 0.6f;
+
+        if (GUI.Button(BtnRect(cx, y, bw, bh), "ゲームスタート", style)) StartGame();
+        if (GUI.Button(BtnRect(cx, y + (bh + gap), bw, bh), "終了", style)) QuitGame();
+    }
+
+    private void QuitGame()
+    {
 #if UNITY_EDITOR
-                    UnityEditor.EditorApplication.isPlaying = false;
+        UnityEditor.EditorApplication.isPlaying = false;
 #else
-                    Application.Quit();
+        Application.Quit();
 #endif
-                    break;
-            }
-        }
     }
-
-    private void SelectNext()
-    {
-        int count = System.Enum.GetValues(typeof(MenuSelection)).Length;
-        currentSelection = (MenuSelection)(((int)currentSelection + 1) % count);
-    }
-
-    private void SelectPrevious()
-    {
-        int count = System.Enum.GetValues(typeof(MenuSelection)).Length;
-        currentSelection = (MenuSelection)(((int)currentSelection - 1 + count) % count);
-    }
-
-    private void ExecuteSelection()
-    {
-        switch (currentSelection)
-        {
-            case MenuSelection.GameStart:
-                currentState = TitleState.FadeOut;
-                elapsedTime = 0f;
-                break;
-            case MenuSelection.Options:
-                // TODO: オプション画面（将来的に実装）
-                Debug.Log("Options - Not implemented yet");
-                break;
-            case MenuSelection.Exit:
-                currentState = TitleState.FadeOut;
-                elapsedTime = 0f;
-                break;
-        }
-    }
-
-    #region Input Helpers
-
-    private bool AnyInputPressed()
-    {
-        // キーボード
-        if (Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame)
-        {
-            return true;
-        }
-
-        // ゲームパッド
-        if (Gamepad.current != null)
-        {
-            if (Gamepad.current.buttonSouth.wasPressedThisFrame ||
-                Gamepad.current.buttonEast.wasPressedThisFrame ||
-                Gamepad.current.startButton.wasPressedThisFrame)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private float GetVerticalInput()
-    {
-        float value = 0f;
-
-        // キーボード
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.upArrowKey.isPressed || Keyboard.current.wKey.isPressed)
-            {
-                value = 1f;
-            }
-            else if (Keyboard.current.downArrowKey.isPressed || Keyboard.current.sKey.isPressed)
-            {
-                value = -1f;
-            }
-        }
-
-        // ゲームパッド（左スティックまたはDパッド）
-        if (Gamepad.current != null)
-        {
-            float stick = Gamepad.current.leftStick.y.ReadValue();
-            float dpad = Gamepad.current.dpad.y.ReadValue();
-
-            if (Mathf.Abs(stick) > Mathf.Abs(value))
-            {
-                value = stick;
-            }
-            if (Mathf.Abs(dpad) > Mathf.Abs(value))
-            {
-                value = dpad;
-            }
-        }
-
-        return value;
-    }
-
-    private bool ConfirmPressed()
-    {
-        // キーボード: Enter/Space/Z
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.enterKey.wasPressedThisFrame ||
-                Keyboard.current.spaceKey.wasPressedThisFrame ||
-                Keyboard.current.zKey.wasPressedThisFrame)
-            {
-                return true;
-            }
-        }
-
-        // ゲームパッド: A/Cross
-        if (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private bool CancelPressed()
-    {
-        // キーボード: Escape/X
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.escapeKey.wasPressedThisFrame ||
-                Keyboard.current.xKey.wasPressedThisFrame)
-            {
-                return true;
-            }
-        }
-
-        // ゲームパッド: B/Circle
-        if (Gamepad.current != null && Gamepad.current.buttonEast.wasPressedThisFrame)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    #endregion
 }

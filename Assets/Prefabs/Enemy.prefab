@@ -101,7 +101,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 940589550729966126}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7b652829dca27444083fe1b9f4d42841, type: 3}
+  m_Script: {fileID: 11500000, guid: 245cf51e1d2104e6d9f9c8ffa1a499ae, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UnderTheSpotlight.FloatingCharacterMotion
   amplitude: 2

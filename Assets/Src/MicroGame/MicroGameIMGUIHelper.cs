@@ -188,7 +188,7 @@ public class MicroGameIMGUIHelper : MonoBehaviour
         float timeLimit = getLimitFunc();
         float remaining = Mathf.Max(0f, timeLimit - currentTime);
 
-        string timerText = $"TIME: {remaining:F1}";
+        string timerText = $"TIME {remaining:F1}";
 
         // テクスチャ更新（0.1秒単位で更新）
         if (timerText != cachedTimerText || timerTexture == null)
@@ -210,11 +210,7 @@ public class MicroGameIMGUIHelper : MonoBehaviour
             cachedTimerText = timerText;
         }
 
-        if (timerTexture == null) return;
-
-        // 画面右上に描画
-        float x = Screen.width - timerTexture.width - 20f;
-        float y = 20f;
-        GUI.DrawTexture(new Rect(x, y, timerTexture.width, timerTexture.height), timerTexture);
+        // 右中央・金枠で描画(共通)
+        AcImgui.DrawTimerBox(timerTexture);
     }
 }

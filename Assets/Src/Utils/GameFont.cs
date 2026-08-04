@@ -49,20 +49,45 @@ public static class GameFont
         return _displayCached;
     }
 
-    /// <summary>本文フォント(チップ/ラベル等)。未設定なら OS のゴシック系を探す。</summary>
+    /// <summary>
+    /// 本文フォント(チップ/ラベル等)。IMGUI ネイティブで日本語を描画するために、
+    /// プロジェクト同梱のインポート済みフォント(misaki_gothic)を最優先で使う。
+    ///
+    /// ※ Unity 6 の IMGUI(TextCore) は Font.CreateDynamicFontFromOSFont 由来の動的OSフォントを
+    ///   FontAsset へ変換する際に FontAsset.CreateFontAsset で例外を投げる(ボタン等のラベルが
+    ///   壊れて描画される)。インポート済みの .ttf アセットは安全に変換できるため、そちらを使う。
+    /// </summary>
+    // 解決順: ドット感 + 可読性を優先。推奨主フォント PixelMplus（要追加）→ 同梱 misaki_gothic。
+    // 正典（フォント方針）: Docs/Specifications/デザインテーマ.md
+    private static readonly string[] BodyFontCandidates =
+    {
+        // 決定(主フォント): PixelMplus12。公式配布名(PixelMplus12-Regular)でもリネーム後(PixelMplus12)でも拾えるよう両対応。
+        // Assets/Resources/Fonts/ に .ttf を置くだけで自動有効化。
+        "Fonts/PixelMplus12-Regular",
+        "Fonts/PixelMplus12",
+        "Fonts/PixelMplus10-Regular",
+        "Fonts/PixelMplus10",
+        "Fonts/misaki_gothic",  // 同梱フォールバック(8px 美咲ゴシック)。PixelMplus 未配置時に使用
+    };
+
     public static Font Body()
     {
         if (_bodyOverride != null) return _bodyOverride;
         if (_bodyCached != null) return _bodyCached;
-        _bodyCached = Font.CreateDynamicFontFromOSFont(
-            new[] {
-                "Yu Gothic UI", "Yu Gothic",
-                "Meiryo", "MS Gothic",
-                "Hiragino Sans", "Hiragino Kaku Gothic ProN",
-                "Noto Sans JP", "Noto Sans CJK JP",
-                "Arial"
-            }, 36);
-        if (_bodyCached == null) _bodyCached = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+        // インポート済み .ttf を優先(Unity 6 の IMGUI/TextCore でも例外にならない)。
+        foreach (var name in BodyFontCandidates)
+        {
+            _bodyCached = Resources.Load<Font>(name);
+            if (_bodyCached != null) return _bodyCached;
+        }
+
+        Debug.LogError("[GameFont] Resources/Fonts に本文フォント(PixelMplus / misaki_gothic)が見つかりません。" +
+            "日本語 IMGUI ラベルが正しく描画されない可能性があります。" +
+            "Assets/Resources/Fonts/ にフォントを配置してください。");
+
+        // 最終手段: IMGUI 組み込みフォント(欧文のみ・例外は出ない)。
+        _bodyCached = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         return _bodyCached;
     }
 }

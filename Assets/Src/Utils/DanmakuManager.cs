@@ -54,9 +54,20 @@ public class DanmakuManager : MonoBehaviour
             && p.y >= fieldBounds.min.y && p.y <= fieldBounds.max.y;
     }
 
+    private bool warnedNoBulletPrefab;
+
     public GameObject SpawnBullet(Vector3 pos, Vector3 vel)
     {
-        if (bulletPrefab == null) return null;
+        if (bulletPrefab == null)
+        {
+            if (!warnedNoBulletPrefab)
+            {
+                Debug.LogError("[DanmakuManager] bulletPrefab が未設定です。弾のプレハブ(Bullet コンポーネント付き)を設定してください。弾を生成できません。");
+                warnedNoBulletPrefab = true;
+            }
+            return null;
+        }
+
         var go = Instantiate(bulletPrefab, pos, Quaternion.identity, bulletsParent);
         var b = go.GetComponent<Bullet>();
         if (b == null) b = go.AddComponent<Bullet>();

@@ -11,16 +11,18 @@ public class ResultSceneController : MonoBehaviour
     [SerializeField] private string victoryText = "VICTORY!";
     [SerializeField] private string defeatText = "GAME OVER";
 
-    [Header("8bit カラー設定")]
-    [SerializeField] private Color victoryColor = new Color(1f, 0.9f, 0.2f);
-    [SerializeField] private Color defeatColor = new Color(0.8f, 0.3f, 0.3f);
-    [SerializeField] private Color bgColor1 = new Color(0.02f, 0.02f, 0.08f);
-    [SerializeField] private Color bgColor2 = new Color(0.0f, 0.0f, 0.03f);
+    // 色はテーマ(GameColorScheme)に一元化。正典: Docs/Specifications/デザインテーマ.md
+    //   勝利=Accent(金) / 敗北=Danger(赤) / 背景=Background グラデ
 
     private bool isVictory;
     private float inputDelay = 1.5f;
     private float elapsedTime;
     private bool canAcceptInput;
+
+    // 勝利時: 一定時間リザルトを見せてから自動でステージ(ワールドマップ)へフェード
+    private float victoryHoldTimer;
+    private float victoryAutoReturnDelay = 3.5f;
+    private bool autoReturning;
 
     // テクスチャ
     private Texture2D bgTexture;
@@ -62,16 +64,17 @@ public class ResultSceneController : MonoBehaviour
     {
         // 背景
         bgTexture = PixelFontRenderer.CreateDitheredGradient(
-            Screen.width / 4, Screen.height / 4, bgColor1, bgColor2, 2);
+            Screen.width / 4, Screen.height / 4,
+            GameColorScheme.BackgroundTop, GameColorScheme.BackgroundBottom, 2);
 
         // 結果テキスト
-        Color resultColor = isVictory ? victoryColor : defeatColor;
+        Color resultColor = isVictory ? GameColorScheme.Accent : GameColorScheme.Danger;
         string text = isVictory ? victoryText : defeatText;
         resultTexture = PixelFontRenderer.RenderText(text, resultColor, pixelScale + 3);
 
         // 操作ガイド
         continueTexture = PixelFontRenderer.RenderText("Z: CONTINUE", Color.white, pixelScale);
-        titleTexture = PixelFontRenderer.RenderText("X: TITLE", new Color(0.7f, 0.7f, 0.8f), pixelScale);
+        titleTexture = PixelFontRenderer.RenderText("X: TITLE", GameColorScheme.TextMuted, pixelScale);
 
         // スター（勝利時のみ多め）
         int starCount = isVictory ? 5 : 2;
@@ -79,7 +82,7 @@ public class ResultSceneController : MonoBehaviour
         for (int i = 0; i < starCount; i++)
         {
             int size = pixelScale * (6 + i * 2);
-            Color starColor = isVictory ? victoryColor : new Color(0.5f, 0.5f, 0.6f);
+            Color starColor = isVictory ? GameColorScheme.Accent : GameColorScheme.TextMuted;
             starTextures[i] = PixelFontRenderer.CreatePixelStar(size, starColor);
         }
     }
@@ -130,15 +133,27 @@ public class ResultSceneController : MonoBehaviour
             return;
         }
 
-        // キーボード
+        // 勝利時は一定時間表示したら自動でステージ(ワールドマップ)へフェードして戻る
+        if (isVictory && !autoReturning)
+        {
+            victoryHoldTimer += Time.deltaTime;
+            if (victoryHoldTimer >= victoryAutoReturnDelay)
+            {
+                autoReturning = true;
+                GameSceneManager.Instance?.GoToWorldMap();
+                return;
+            }
+        }
+
+        // キーボード(ゲームオーバー時はボタン選択を優先し、決定キーで勝手に遷移しない)
         var kb = Keyboard.current;
         if (kb != null)
         {
-            if (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame)
+            if (isVictory && (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame))
             {
                 GameSceneManager.Instance?.GoToWorldMap();
             }
-            if (kb.escapeKey.wasPressedThisFrame || kb.xKey.wasPressedThisFrame)
+            if (kb.escapeKey.wasPressedThisFrame)
             {
                 GameSceneManager.Instance?.GoToTitle();
             }
@@ -148,7 +163,7 @@ public class ResultSceneController : MonoBehaviour
         var gp = Gamepad.current;
         if (gp != null)
         {
-            if (gp.buttonSouth.wasPressedThisFrame)
+            if (isVictory && gp.buttonSouth.wasPressedThisFrame)
             {
                 GameSceneManager.Instance?.GoToWorldMap();
             }
@@ -164,7 +179,7 @@ public class ResultSceneController : MonoBehaviour
         DrawBackground();
         DrawStars();
         DrawResult();
-        DrawGuide();
+        DrawButtons();
     }
 
     private void DrawBackground()
@@ -240,7 +255,7 @@ public class ResultSceneController : MonoBehaviour
         // サブテキスト（勝利時は追加メッセージ）
         if (isVictory && elapsedTime > 0.5f)
         {
-            Texture2D subTex = PixelFontRenderer.RenderText("STAGE CLEAR!", new Color(0.8f, 0.9f, 1f), pixelScale);
+            Texture2D subTex = PixelFontRenderer.RenderText("STAGE CLEAR!", GameColorScheme.Accent, pixelScale);
             if (subTex != null)
             {
                 GUI.DrawTexture(new Rect(
@@ -251,35 +266,53 @@ public class ResultSceneController : MonoBehaviour
         }
     }
 
-    private void DrawGuide()
+    private GUIStyle cachedBtnStyle;
+    private GUIStyle ButtonStyle()
+    {
+        if (cachedBtnStyle == null)
+        {
+            cachedBtnStyle = new GUIStyle(GUI.skin.button);
+            var f = GameFont.Body();          // 日本語対応フォント(IMGUIネイティブ)
+            if (f != null) cachedBtnStyle.font = f;
+            cachedBtnStyle.fontSize = Mathf.Max(18, pixelScale * 7);
+            cachedBtnStyle.fontStyle = FontStyle.Bold;
+        }
+        return cachedBtnStyle;
+    }
+
+    private static Rect BtnRect(float cx, float y, float w, float h) => new Rect(cx - w / 2f, y, w, h);
+
+    private void DrawButtons()
     {
         if (!canAcceptInput) return;
 
-        // 点滅表示
-        bool visible = Mathf.Sin(blinkTimer * 3f) > 0;
-        if (!visible) return;
+        var style = ButtonStyle();
+        float cx = Screen.width / 2f;
+        float bw = Mathf.Min(Screen.width * 0.66f, 460f);
+        float bh = Mathf.Max(48f, Screen.height * 0.075f);
+        float gap = bh * 0.28f;
 
-        float centerX = Screen.width / 2f;
-        float y = Screen.height * 0.7f;
-
-        // CONTINUE
-        if (continueTexture != null)
+        if (isVictory)
         {
-            GUI.DrawTexture(new Rect(
-                centerX - continueTexture.width / 2f,
-                y,
-                continueTexture.width,
-                continueTexture.height), continueTexture);
+            float y = Screen.height * 0.6f;
+            if (GUI.Button(BtnRect(cx, y, bw, bh), "MAPに戻る", style)) GameSceneManager.Instance?.GoToWorldMap();
+            if (GUI.Button(BtnRect(cx, y + (bh + gap), bw, bh), "タイトルに戻る", style)) GameSceneManager.Instance?.GoToTitle();
         }
-
-        // TITLE
-        if (titleTexture != null)
+        else
         {
-            GUI.DrawTexture(new Rect(
-                centerX - titleTexture.width / 2f,
-                y + continueTexture.height + pixelScale * 4,
-                titleTexture.width,
-                titleTexture.height), titleTexture);
+            // ゲームオーバー: 再チャレンジ / MAP / タイトル
+            float y = Screen.height * 0.54f;
+            if (GUI.Button(BtnRect(cx, y, bw, bh), "同じステージに再チャレンジ", style)) RetryStage();
+            if (GUI.Button(BtnRect(cx, y + (bh + gap), bw, bh), "MAPに戻る", style)) GameSceneManager.Instance?.GoToWorldMap();
+            if (GUI.Button(BtnRect(cx, y + 2f * (bh + gap), bw, bh), "タイトルに戻る", style)) GameSceneManager.Instance?.GoToTitle();
         }
+    }
+
+    private void RetryStage()
+    {
+        var gm = GameSceneManager.Instance;
+        if (gm == null) return;
+        if (gm.selectedStage != null) gm.GoToBattle(gm.selectedStage, gm.bossIndex);
+        else gm.GoToWorldMap();   // ステージ情報が無ければMAPへ
     }
 }

@@ -155,12 +155,8 @@ public class SequenceIMGUIHelper : MonoBehaviour
             cachedTimer = timerText;
         }
 
-        if (timerTexture != null)
-        {
-            float x = Screen.width - timerTexture.width - 20f;
-            float y = 20f;
-            GUI.DrawTexture(new Rect(x, y, timerTexture.width, timerTexture.height), timerTexture);
-        }
+        // 右中央・金枠で描画(共通)
+        AcImgui.DrawTimerBox(timerTexture);
 
         // プロンプト
         if (promptTexture != null)

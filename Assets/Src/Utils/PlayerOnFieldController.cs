@@ -9,7 +9,7 @@ using UnityEngine;
 public class PlayerOnFieldController : MonoBehaviour
 {
     [Tooltip("移動速度(ワールド単位/秒)。")]
-    public float moveSpeed = 400f;
+    public float moveSpeed = 6f;
     [Tooltip("移動可能範囲。EnableBounds が true のときのみクランプされる。")]
     public Bounds movementBounds;
     [Tooltip("true で movementBounds による位置クランプを有効化。")]

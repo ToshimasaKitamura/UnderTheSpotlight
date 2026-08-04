@@ -1,55 +1,56 @@
-# ドキュメント構成
+# ドキュメント構成 ／ 仕様の索引（矛盾を防ぐ運用）
 
-このフォルダには、プロジェクトの仕様書とドキュメントが格納されています。
+このフォルダはプロジェクトの仕様・設計・開発ドキュメントの置き場です。
+**「このゲームの仕様を矛盾なく記述する」ための運用**を以下に定めます。
 
-## フォルダ構成
+## 大原則: 単一所有（Single Source of Truth）
 
-- **Specifications/** - 仕様書（実装の基準となる文書）
-  - ゲーム設計、システム仕様、データ構造など
-- **Design/** - 設計書（予定）
-  - クラス設計、アーキテクチャ設計など
-- **Reference/** - リファレンス（予定）
-  - API仕様、データフォーマットなど
+1. **1トピック＝1正典**。同じ事実を複数の文書に書かない。他所からは**リンクで参照**する（再掲しない）。
+2. **仕様書が真実**。コードと仕様が食い違ったら、正しい方に合わせて**両方を同期**する（放置しない）。
+3. **挙動を変えたら、その正典を必ず更新する**（更新しない変更は未完了）。
+4. **矛盾は自動検出する** → `bash Tools/check_spec_consistency.sh`（下記）。
 
-## 重要な原則
+## トピック → 正典（ここを直す）
 
-### 仕様書の位置づけ
-1. **仕様書が真実** - コードと仕様が矛盾する場合、仕様書を基準とする
-2. **実装前に読む** - 新機能開発時は必ず関連仕様を確認
-3. **実装後に照合** - 作業完了後、仕様と実装の整合性を確認
-4. **ずれを検出したら更新** - 仕様書または実装を修正し、同期を保つ
+| トピック | 正典（唯一の場所） |
+|---|---|
+| ゲーム全体像・プレイヤー数・勝敗 | [Specifications/GAME_SPECIFICATION.md](Specifications/GAME_SPECIFICATION.md) |
+| シーン遷移・各シーンの操作 | [Specifications/GAME_FLOW.md](Specifications/GAME_FLOW.md) |
+| フォント・テーマカラー（見た目） | [Specifications/デザインテーマ.md](Specifications/デザインテーマ.md) |
+| フォルダ構成・ファイル配置 | [フォルダ構成.md](フォルダ構成.md) |
+| 各システムの詳細設計 | `Design/<システム>_Design.md`（下表） |
+| ビルド対象シーンと順序 | `ProjectSettings/EditorBuildSettings.asset`（コードが真実） |
+| ゲームバランス数値 | `Assets/Data/csv/*` ＋ [Design/CsvWorkflow.md](Design/CsvWorkflow.md) |
+| キャラとスプライトの対応 | [CharacterData_Sprite_Mapping.md](CharacterData_Sprite_Mapping.md) |
+| 修正の経緯・既知の罠 | [開発ナレッジ.md](開発ナレッジ.md) |
 
-### AI開発時のルール
-Claude Codeが開発を行う際は、以下の手順を遵守：
-1. **タスク開始時** - Docs/Specifications/ 内の関連仕様を読み取る
-2. **実装中** - 仕様に従って開発を進める
-3. **完了時** - 実装が仕様通りか照合する
-4. **ずれ検出時** - ユーザーに報告し、どちらを修正すべきか確認
+> 上表に無い新トピックを書くときは、**まず正典をどこにするか決めてこの表に1行足す**。決めずに複数箇所へ書かない。
 
-## 現在のドキュメント
+## Design/ — 個別システム設計（各システムの正典）
 
-### Specifications/ - 仕様書（実装の基準）
-- [GAME_SPECIFICATION.md](Specifications/GAME_SPECIFICATION.md) - ゲーム全体仕様（最優先）
-- [GAME_FLOW.md](Specifications/GAME_FLOW.md) - ゲームフロー、シーン遷移
-- [FOLDER_STRUCTURE.md](Specifications/FOLDER_STRUCTURE.md) - プロジェクトフォルダ構成
+- [ActionCommand_Design.md](Design/ActionCommand_Design.md) — アクションコマンド
+- [Bomb_Design.md](Design/Bomb_Design.md) — ボム(援護)
+- [CardSystem_Design.md](Design/CardSystem_Design.md) — カード/デッキ
+- [CardMetaUpgrade_Design.md](Design/CardMetaUpgrade_Design.md) — カード強化
+- [CharacterPassive_Design.md](Design/CharacterPassive_Design.md) — キャラLv/パッシブ
+- [CsvWorkflow.md](Design/CsvWorkflow.md) — CSV パラメータ管理
+- [DodgePhase_Design.md](Design/DodgePhase_Design.md) — 弾幕回避フェーズ
+- [PartDestruction_Design.md](Design/PartDestruction_Design.md) — 部位破壊
+- [StageMap_Design.md](Design/StageMap_Design.md) — ステージマップ
 
-### Design/ - 設計書（個別システムの詳細設計）
-- [ActionCommand_Design.md](Design/ActionCommand_Design.md) - アクションコマンド設計
-- [Bomb_Design.md](Design/Bomb_Design.md) - ボムシステム設計
-- [CardMetaUpgrade_Design.md](Design/CardMetaUpgrade_Design.md) - カード強化設計
-- [CardSystem_Design.md](Design/CardSystem_Design.md) - カードシステム設計
-- [CharacterPassive_Design.md](Design/CharacterPassive_Design.md) - キャラクターパッシブ設計
-- [CsvWorkflow.md](Design/CsvWorkflow.md) - CSVインポートワークフロー
-- [DodgePhase_Design.md](Design/DodgePhase_Design.md) - 回避フェーズ設計
-- [PartDestruction_Design.md](Design/PartDestruction_Design.md) - 部位破壊システム設計
-- [StageMap_Design.md](Design/StageMap_Design.md) - ステージマップ設計
+## その他
 
-### Root/ - プロジェクト全体
-- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) - 開発ガイドライン（必読）
-- [README.md](README.md) - このファイル
+- [修正PDCA.md](修正PDCA.md) — 修正を Plan→Do→Check→Act で回す仕組み（`/pdca`）
+- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) — 開発ガイドライン
+- [TroubleShooting_SpriteNotVisible.md](TroubleShooting_SpriteNotVisible.md) — 既知のトラブル対処
 
-## 今後追加予定のドキュメント
+## 矛盾検出の仕組み
 
-- **Specifications/BATTLE_SPECIFICATION.md** - バトルシステム詳細仕様
-- **Specifications/UI_SPECIFICATION.md** - UI/UX仕様
-- **Specifications/TUNING_SPECIFICATION.md** - ゲームバランス調整値
+- **`bash Tools/check_spec_consistency.sh`** — リンク切れ / 仕様が参照するシーン・型の実在 / 見出しの二重所有 を検査。違反があれば終了コード 1。
+- `.claude/settings.json` の PostToolUse フックで、Write/Edit のたびに自動実行される。
+- 仕様と実装がずれていたら、上表の正典を直して同期する。
+
+### AI（Claude Code）が守る手順
+1. 実装前: 関連する正典（上表）を読む。
+2. 実装後: 挙動を変えたら**その正典を更新**し、`check_spec_consistency.sh` を通す。
+3. 迷ったら: どちらを正とするかユーザーに確認してから同期する。

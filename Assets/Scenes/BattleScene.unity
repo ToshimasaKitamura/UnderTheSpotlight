@@ -201,7 +201,7 @@ SpriteRenderer:
   m_SortingOrder: 10
   m_MaskInteraction: 0
   m_Sprite: {fileID: 1700000004, guid: 9012345abcdef1112233445566778899, type: 3}
-  m_Color: {r: 1, g: 0.85, b: 0.35, a: 1}
+  m_Color: {r: 1, g: 0.925, b: 0.675, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -346,6 +346,9 @@ GameObject:
   m_Component:
   - component: {fileID: 504039078}
   - component: {fileID: 504039077}
+  - component: {fileID: 504039080}
+  - component: {fileID: 504039079}
+  - component: {fileID: 5040390701}
   m_Layer: 0
   m_Name: DodgePhase
   m_TagString: Untagged
@@ -391,6 +394,62 @@ Transform:
   m_Children: []
   m_Father: {fileID: 319266888}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &504039079
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 504039076}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a161d3a01b4214ecda14050e12ee10f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DodgePlayerManager
+  playerOnFieldPrefab: {fileID: 1379937935230777061, guid: 52e0855975c9ef94aab0c0ae685752cc, type: 3}
+  playerColors:
+  - {r: 1, g: 0.35, b: 0.35, a: 1}
+  - {r: 0.35, g: 0.6, b: 1, a: 1}
+  - {r: 0.35, g: 1, b: 0.4, a: 1}
+  - {r: 1, g: 0.85, b: 0.35, a: 1}
+  playerTurnDuration: 4
+  playerCallouts: []
+--- !u!114 &504039080
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 504039076}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 185fc368d8b904c35a9fd5895826154c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DodgeEnemyManager
+  enemyOnFieldPrefab: {fileID: 1379937935230777061, guid: 238110a7ab9968f40a5b2d60441e3a5f, type: 3}
+  spawnPosition: {x: 0, y: 3, z: 0}
+  entryHeight: 8
+  appearDuration: 0.6
+  danmakuManager: {fileID: 5040390701}
+--- !u!114 &5040390701
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 504039076}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 472f325bd37544bc395b1ac4cf13f965, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DanmakuManager
+  bulletPrefab: {fileID: 1379937935230777061, guid: a4d3dd27f9f73c04d9a57ab7071626dd, type: 3}
+  bulletsParent: {fileID: 0}
+  bullets: []
+  fieldBounds:
+    m_Center: {x: 0, y: 0, z: 0}
+    m_Extent: {x: 5.25, y: 5.25, z: 0.5}
+  useFieldBounds: 1
 --- !u!1 &519420028
 GameObject:
   m_ObjectHideFlags: 0
@@ -840,7 +899,7 @@ SpriteRenderer:
   m_SortingOrder: 10
   m_MaskInteraction: 0
   m_Sprite: {fileID: 1700000001, guid: 9012345abcdef1112233445566778899, type: 3}
-  m_Color: {r: 1, g: 0.35, b: 0.35, a: 1}
+  m_Color: {r: 1, g: 0.675, b: 0.675, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1030,7 +1089,7 @@ SpriteRenderer:
   m_SortingOrder: 10
   m_MaskInteraction: 0
   m_Sprite: {fileID: 1700000003, guid: 9012345abcdef1112233445566778899, type: 3}
-  m_Color: {r: 0.35, g: 1, b: 0.4, a: 1}
+  m_Color: {r: 0.675, g: 1, b: 0.7, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1100,8 +1159,6 @@ MonoBehaviour:
   - {r: 0.35, g: 0.6, b: 1, a: 1}
   - {r: 0.35, g: 1, b: 0.4, a: 1}
   - {r: 1, g: 0.85, b: 0.35, a: 1}
-  collapseAnimDuration: 0.4
-  expandAnimDuration: 0.5
   cardEnterDuration: 0.3
   cardEnterStagger: 0.1
 --- !u!1 &1467116436
@@ -1586,7 +1643,7 @@ SpriteRenderer:
   m_SortingOrder: 10
   m_MaskInteraction: 0
   m_Sprite: {fileID: 1700000002, guid: 9012345abcdef1112233445566778899, type: 3}
-  m_Color: {r: 0.35, g: 0.6, b: 1, a: 1}
+  m_Color: {r: 0.675, g: 0.8, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0

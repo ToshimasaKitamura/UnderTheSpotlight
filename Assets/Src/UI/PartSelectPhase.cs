@@ -133,17 +133,12 @@ public class PartSelectPhase : MonoBehaviour, IBattlePhase
             return false;
         }
         var data = card.Data;
-        if (data == null || data.category != CardCategory.Attack)
+        if (data == null)
         {
-            targetPartIds[playerIndex] = null; // 非攻撃: 部位不要
+            targetPartIds[playerIndex] = null;
             return false;
         }
-        if (data.attackRange == CardAttackRange.All)
-        {
-            targetPartIds[playerIndex] = null; // All: AC 側で全部位ループ
-            UnityEngine.Debug.Log($"[PartSelectPhase] P{playerIndex + 1} は全体攻撃 → 部位選択スキップ");
-            return false;
-        }
+        // 【仕様】どのカードでも部位を選ばせる(非攻撃/全体攻撃も含む)。攻撃はデフォルトで行うため。
         if (enemyState == null || enemyState.enemyData == null)
         {
             UnityEngine.Debug.LogWarning("[PartSelectPhase] EnemyRuntimeState/EnemyData が見つかりません。スキップ。");
@@ -151,18 +146,19 @@ public class PartSelectPhase : MonoBehaviour, IBattlePhase
             return false;
         }
 
+        // 生存している全部位を候補にする(カードの攻撃範囲に依らず、どれでも狙える)
         currentParts = new List<EnemyPart>();
-        foreach (var p in enemyState.EnumerateSelectableParts(data.attackRange)) currentParts.Add(p);
+        foreach (var p in enemyState.enemyData.parts)
+            if (p != null && !enemyState.IsDestroyed(p.id)) currentParts.Add(p);
+
         if (currentParts.Count == 0)
         {
-            UnityEngine.Debug.Log($"[PartSelectPhase] P{playerIndex + 1} 選べる部位が無い → スキップ");
             targetPartIds[playerIndex] = null;
             return false;
         }
         if (currentParts.Count == 1)
         {
             targetPartIds[playerIndex] = currentParts[0].id;
-            UnityEngine.Debug.Log($"[PartSelectPhase] P{playerIndex + 1} 選択肢1つ自動確定: {currentParts[0].displayName}");
             return false;
         }
 

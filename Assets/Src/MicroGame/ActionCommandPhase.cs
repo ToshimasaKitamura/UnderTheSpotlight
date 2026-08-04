@@ -52,6 +52,21 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
     /// <summary>このフェーズでの成功数(次フェーズ等が参照可能)。</summary>
     public int SuccessCount { get; private set; }
+
+    [Header("【仮】ボス撃破条件")]
+    [Tooltip("アクションコマンド成功が累計これだけ溜まるとボス撃破(勝利)。四人分成功で倒せる想定=4")]
+    [SerializeField] private int hitsToDefeatBoss = 4;
+    [Tooltip("非攻撃カード(回復/防御/バフ等)がデフォルト攻撃で与える基礎威力")]
+    [SerializeField] private int nonAttackDefaultPower = 1;
+    // 累計成功数。ラウンドをまたいで蓄積する(Enterでリセットしない)。
+    private int cumulativeHits;
+
+    // ダメージ演出用: 敵(ボス)の視覚参照とホーム位置・揺れコルーチン
+    private Transform cachedEnemyTf;
+    private Vector3 cachedEnemyHome;
+    private Coroutine enemyShakeCo;
+    // 実行中ミニゲームのコンテキスト(ダメージ光の始点=ゲージ末端座標の取得に使う)
+    private MicroGameContext currentCtx;
     /// <summary>実行したラウンド総数。</summary>
     public int RoundsPlayed { get; private set; }
     /// <summary>各プレイヤーの成功回数(部位破壊のダメージ適用判定に使う)。</summary>
@@ -60,7 +75,6 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     public bool BlocksDebugAdvance => true; // 自前で入力処理&遷移するためデバッグEnter抑止
 
     private Coroutine routine;
-    private MiniGameStartView startView;
     private GameObject uiHost;
     private RectTransform microRoot;
     private System.Random rng;
@@ -138,7 +152,6 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         enabled = false;
         if (routine != null) { StopCoroutine(routine); routine = null; }
         StopAllCoroutines();
-        if (startView != null) { startView.Close(); Destroy(startView.gameObject); startView = null; }
         if (uiHost != null) { Destroy(uiHost); uiHost = null; microRoot = null; }
         if (guiHelper != null) { Destroy(guiHelper); guiHelper = null; }
         hitEffects.Clear();
@@ -158,32 +171,19 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         var selections = cardSelectPhase != null ? cardSelectPhase.Selections : null;
         var mods = new ActionCommandModifiers(selections);
 
-        // Registry からランダムにミニゲームを選出
-        var registry = MicroGameRegistry.CreateDefault();
+        // 【仮】アクションコマンドは「4人分の領域に分かれた大ゲージをスペース連打」(グループ型)に固定。
         string chosenName;
-        IMicroGame game = registry.CreateRandom(rng, out chosenName);
-        
-        // 万が一 Registry が空の場合は GroupButton にフォールバック
-        if (game == null)
-        {
-            game = new GroupButtonMicroGame();
-            chosenName = game.DisplayName;
-        }
+        IMicroGame game = new GroupMashMicroGame();
+        chosenName = game.DisplayName;
 
-        // MiniGameStart: 全員が順に決定
-        var svObj = new GameObject("MiniGameStartView");
-        svObj.transform.SetParent(transform, false);
-        startView = svObj.AddComponent<MiniGameStartView>();
-        startView.Show(chosenName, playerCount, playerColors);
-        while (!startView.Tick()) yield return null;
-        yield return new WaitForSeconds(0.25f);
-        startView.Close();
-        Destroy(startView.gameObject);
-        startView = null;
+        // MiniGameStart 画面は出さず、そのままミニゲームを開始する。
+        // (CardSelect のカーソル準備完了と二重になり、一瞬表示が出てしまうため廃止)
+        UnityEngine.Debug.Log($"[ActionCommandPhase] ミニゲーム開始: {chosenName}");
 
         // ミニゲーム用 UI ルート
         var canvas = AcUi.CreateOverlayCanvas(transform, "ActionCommandCanvas", 110);
         uiHost = canvas.gameObject;
+
         var rootGo = new GameObject("MicroRoot", typeof(RectTransform));
         rootGo.transform.SetParent(canvas.transform, false);
         microRoot = rootGo.GetComponent<RectTransform>();
@@ -206,7 +206,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         // グループ参加型(GroupButton)か、個別順次参加型かを判定
         // 現状 GroupButtonMicroGame 以外は 1人用として実装されているため、
         // 1人用の場合は人数分ループさせる(本来のパーティゲームの挙動)。
-        bool isGroupGame = (game is GroupButtonMicroGame);
+        bool isGroupGame = (game is GroupButtonMicroGame) || (game is GroupMashMicroGame);
 
         if (isGroupGame)
         {
@@ -228,6 +228,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
                 OnPlayerAttack = HandlePlayerAttack,
             };
 
+            currentCtx = ctx;
             game.Begin(ctx);
             bool done = false;
             while (!done)
@@ -264,8 +265,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
                     OnPlayerAttack = HandlePlayerAttack,
                 };
 
-                // 2回目以降は同じ種類のゲームインスタンスを再生成(Cleanup/Beginを呼ぶため)
-                if (p > 0) game = registry.CreateRandom(rng, out _); // 同じ種類固定にしたい場合は調整
+                // 2回目以降も同じスペース連打(Mash)を再生成(Cleanup/Begin のライフサイクルのため)
+                if (p > 0) game = new MashMicroGame();
 
                 game.Begin(ctx);
                 bool done = false;
@@ -299,8 +300,19 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         bannerText = $"HIT {SuccessCount}/{playerCount}";
         yield return new WaitForSeconds(resultFlashDuration);
 
-        UnityEngine.Debug.Log($"[ActionCommandPhase] 命中 {SuccessCount}/{playerCount} → BattleResult へ");
         routine = null;
+
+        // 【仮】累計成功が閾値に達したらボス撃破＝勝利。リザルト(勝利)へ。
+        if (cumulativeHits >= hitsToDefeatBoss)
+        {
+            UnityEngine.Debug.Log($"[ActionCommandPhase] 累計命中 {cumulativeHits}/{hitsToDefeatBoss} → ボス撃破！勝利");
+            var bsc = FindObjectOfType<BattleSceneController>();
+            if (bsc != null) bsc.OnBattleVictory();
+            else GameSceneManager.Instance?.GoToResult(true);
+            yield break;
+        }
+
+        UnityEngine.Debug.Log($"[ActionCommandPhase] 命中 {SuccessCount}/{playerCount} → BattleResult へ");
         if (stateMachine != null)
             stateMachine.ChangeState(BattleStateMachine.State.BattleResult);
     }
@@ -322,37 +334,36 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         if (perPlayerSuccess != null && playerIndex < perPlayerSuccess.Length)
             perPlayerSuccess[playerIndex]++;
         SuccessCount++;
+        cumulativeHits++;
 
         int dmg = 0;
         string hitLabel = $"P{playerIndex + 1}";
 
-        // 攻撃カードの場合: 敵にダメージ
-        if (card.Category == CardCategory.Attack && enemyState != null)
+        // 【仕様】どのカードでも「デフォルト攻撃」を行う。選択した部位(なければ生存部位)にダメージ。
+        // 攻撃カードはカード威力、非攻撃カードは nonAttackDefaultPower を基礎威力にする。
+        if (enemyState != null)
         {
-            // バフによる攻撃力補正を適用
-            int basePower = card.EffectivePower;
+            int basePower = (card.Category == CardCategory.Attack) ? card.EffectivePower : nonAttackDefaultPower;
             dmg = effectProcessor != null ? effectProcessor.CalculateAttackPower(basePower) : basePower;
-            dmg = Mathf.Max(0, dmg);
+            dmg = Mathf.Max(1, dmg);
 
-            if (card.Data.attackRange == CardAttackRange.All)
+            var targets = partSelectPhase != null ? partSelectPhase.TargetPartIds : null;
+            string partId = (targets != null && playerIndex < targets.Count) ? targets[playerIndex] : null;
+            if (string.IsNullOrEmpty(partId))
             {
+                // 部位未指定なら生存部位のいずれかへ
                 var alive = new List<string>(enemyState.EnumerateAliveParts());
-                foreach (var pid in alive) enemyState.ApplyDamage(pid, dmg);
+                partId = alive.Count > 0 ? alive[0] : null;
+            }
+            if (!string.IsNullOrEmpty(partId))
+            {
+                enemyState.ApplyDamage(partId, dmg);
                 hitLabel += $" -{dmg}";
             }
-            else
-            {
-                var targets = partSelectPhase != null ? partSelectPhase.TargetPartIds : null;
-                string partId = (targets != null && playerIndex < targets.Count) ? targets[playerIndex] : null;
-                if (!string.IsNullOrEmpty(partId))
-                {
-                    enemyState.ApplyDamage(partId, dmg);
-                    hitLabel += $" -{dmg}";
-                }
-            }
         }
-        // 非攻撃カード(回復/防御/バフ/特殊)の場合: BattleEffectProcessor で処理
-        else if (effectProcessor != null)
+
+        // 非攻撃カードは、デフォルト攻撃に加えて本来の効果も処理する。
+        if (card.Category != CardCategory.Attack && effectProcessor != null)
         {
             int successCount = (perPlayerSuccess != null && playerIndex < perPlayerSuccess.Length) ? perPlayerSuccess[playerIndex] : 1;
             effectProcessor.ProcessCardEffect(playerIndex, card, successCount);
@@ -363,8 +374,6 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
                 hitLabel += " DEF";
             else if (card.Category == CardCategory.Buff)
                 hitLabel += " BUFF";
-            else
-                hitLabel += " OK";
         }
 
         // ヒットエフェクトを追加
@@ -385,6 +394,95 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
             startTime = Time.time,
             duration = 1.0f
         });
+
+        // 成功時のみ: そのプレイヤーカラーの光が敵に飛び込み、敵が揺れる。
+        StartCoroutine(PlayDamageLightAndShake(playerIndex, col));
+    }
+
+    /// <summary>敵(ボス)の視覚 Transform を取得(見つからなければ null)。ホーム位置もキャッシュ。</summary>
+    private Transform FindEnemyTransform()
+    {
+        if (cachedEnemyTf != null) return cachedEnemyTf;
+        var ctrl = FindObjectOfType<EnemyOnFieldController>();
+        if (ctrl != null) { cachedEnemyTf = ctrl.transform; cachedEnemyHome = cachedEnemyTf.position; return cachedEnemyTf; }
+        var byName = GameObject.Find("Boss");
+        if (byName != null) { cachedEnemyTf = byName.transform; cachedEnemyHome = cachedEnemyTf.position; return cachedEnemyTf; }
+        return null;
+    }
+
+    /// <summary>プレイヤー色の光を敵へ飛ばし(シュッ)、到達後に敵を揺らす。</summary>
+    private IEnumerator PlayDamageLightAndShake(int playerIndex, Color col)
+    {
+        var enemy = FindEnemyTransform();
+        if (enemy == null) yield break;
+
+        Vector3 target = cachedEnemyHome;
+
+        // 始点: ゲージ末端(スクリーン座標)を敵の平面へ逆投影。取れなければ敵の下から。
+        Vector3 start;
+        var cam = Camera.main;
+        if (cam != null && currentCtx != null && currentCtx.HasLastAttackScreenPos)
+        {
+            var sp = currentCtx.LastAttackScreenPos;
+            float dist = Mathf.Abs(cam.transform.position.z - target.z);
+            start = cam.ScreenToWorldPoint(new Vector3(sp.x, sp.y, dist));
+            start.z = target.z;
+        }
+        else
+        {
+            float offsetX = (playerIndex - (playerCount - 1) * 0.5f) * 0.7f;
+            start = target + new Vector3(offsetX, -4.5f, 0f);
+        }
+
+        // 光(大きめ・分かりやすく)
+        var tex = PixelFontRenderer.CreatePixelStar(30, col);
+        var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+        var lightGo = new GameObject("DamageLight");
+        var sr = lightGo.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = 300;
+        lightGo.transform.position = start;
+
+        float dur = 0.18f, t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / dur);
+            float ease = 1f - (1f - p) * (1f - p);
+            lightGo.transform.position = Vector3.Lerp(start, target, ease);
+            lightGo.transform.localScale = Vector3.one * Mathf.Lerp(2.6f, 1.0f, p);
+            yield return null;
+        }
+        Destroy(lightGo);
+
+        // 揺れ(前の揺れが残っていれば復帰させてから開始し、位置ドリフトを防ぐ)
+        if (enemyShakeCo != null) { StopCoroutine(enemyShakeCo); if (cachedEnemyTf != null) cachedEnemyTf.position = cachedEnemyHome; }
+        enemyShakeCo = StartCoroutine(ShakeEnemy(col));
+    }
+
+    /// <summary>敵を短時間ぶるっと揺らし、スプライトを一瞬フラッシュさせる。</summary>
+    private IEnumerator ShakeEnemy(Color flash)
+    {
+        var enemy = cachedEnemyTf;
+        if (enemy == null) yield break;
+
+        var sr = enemy.GetComponentInChildren<SpriteRenderer>();
+        Color baseCol = sr != null ? sr.color : Color.white;
+        if (sr != null) sr.color = Color.Lerp(baseCol, Color.white, 0.65f);
+
+        float dur = 0.26f, t = 0f, amp = 0.2f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float damp = 1f - t / dur;
+            float ox = (UnityEngine.Random.value * 2f - 1f) * amp * damp;
+            float oy = (UnityEngine.Random.value * 2f - 1f) * amp * damp;
+            if (enemy != null) enemy.position = cachedEnemyHome + new Vector3(ox, oy, 0f);
+            yield return null;
+        }
+        if (enemy != null) enemy.position = cachedEnemyHome;
+        if (sr != null) sr.color = baseCol;
+        enemyShakeCo = null;
     }
 
     private static string CardCategoryJa(CardCategory cat)
