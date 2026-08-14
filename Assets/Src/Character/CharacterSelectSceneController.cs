@@ -34,6 +34,8 @@ public class CharacterSelectSceneController : MonoBehaviour
     private AudioSource audioSource;
     private int[] playerCursorIndices = new int[4];
     private bool[] isPlayerConfirmed = new bool[4];
+    // ステージセレクト(ロビー)で募集した参加プレイヤー。非参加はカーソルを出さず・決定も要求しない。
+    private bool[] participating = new bool[4] { true, true, true, true };
     private CharacterData[] selectedCharacters;
     private List<int> availableIndices = new List<int>();
     
@@ -45,8 +47,10 @@ public class CharacterSelectSceneController : MonoBehaviour
     // 数字キー(1〜4)を押しながら WASD/矢印でそのプレイヤーのカーソルを移動。無ければ activePlayer。
     private Canvas cursorCanvas;
     private RectTransform[] cursorRT;
+    private UnityEngine.UI.Image[] cursorImg;
     private Vector2[] cursorPos;
     private int activePlayer = 0;
+    private int lastActiveVisual = -1; // カーソル明暗の再描画差分用
     private const float CursorSpeed = 900f; // カーソル移動速度(px/秒)
 
     private float inputCooldown = 0f;
@@ -121,8 +125,33 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
             playerListView.ClearAll();
         }
 
+        ResolveParticipants(); // ステージセレクトで募集した参加者を反映
         CreateCursors();   // 各プレイヤーのカーソルを生成(キーボード選択は撤廃)
         UpdateUI();
+    }
+
+    /// <summary>
+    /// ステージセレクト(ロビー)で募集した参加プレイヤーを取り込む。
+    /// 募集情報が無い(直接シーン再生)場合のみ、開発用に4人全員参加として扱う。
+    /// </summary>
+    private void ResolveParticipants()
+    {
+        var gsm = GameSceneManager.Instance;
+        if (gsm != null && gsm.JoinedCount >= 1)
+        {
+            for (int i = 0; i < 4; i++) participating[i] = gsm.joinedPlayers[i];
+        }
+        else
+        {
+            for (int i = 0; i < 4; i++) participating[i] = true;
+            Debug.LogWarning("[CharacterSelect] ロビーの募集情報がありません(直接再生とみなす)。4人全員参加として進めます。");
+        }
+
+        // アクティブ/表示の初期プレイヤーを最初の参加者にする
+        for (int i = 0; i < 4; i++)
+        {
+            if (participating[i]) { activePlayer = i; lastInputPlayerIndex = i; break; }
+        }
     }
 
     void Update()
@@ -156,26 +185,35 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         bool[] holdP = { kb.digit1Key.isPressed, kb.digit2Key.isPressed, kb.digit3Key.isPressed, kb.digit4Key.isPressed };
         bool anyHeld = holdP[0] || holdP[1] || holdP[2] || holdP[3];
 
-        // カーソル移動
+        // 数字キーを押している間は、そのプレイヤーが「選んでいるプレイヤー(=アクティブ)」になる。
+        if (anyHeld)
+        {
+            for (int p = 0; p < numberOfPlayers; p++)
+                if (holdP[p] && participating[p]) { activePlayer = p; break; }
+        }
+
+        // カーソル移動: 数字キー押下中はそのプレイヤー(複数可)、無ければ activePlayer のみ。
+        // ※非アクティブのカーソルも数字キー併用で動かせる（決定は下で弾く）。参加者のみ。
         if (dir != Vector2.zero)
         {
             for (int p = 0; p < numberOfPlayers; p++)
             {
                 bool move = anyHeld ? holdP[p] : (p == activePlayer);
-                if (!move) continue;
+                if (!move || !participating[p]) continue;
                 cursorPos[p] += dir * CursorSpeed * Time.deltaTime;
                 cursorPos[p].x = Mathf.Clamp(cursorPos[p].x, 0f, Screen.width);
                 cursorPos[p].y = Mathf.Clamp(cursorPos[p].y, 0f, Screen.height);
                 if (cursorRT[p] != null) cursorRT[p].position = cursorPos[p];
-                activePlayer = p;
             }
         }
+
+        RefreshCursorVisual();  // アクティブ以外を減光
 
         // ホバー中のカードを各プレイヤーの選択に反映(変化時のみ更新)
         bool changed = false;
         for (int p = 0; p < numberOfPlayers; p++)
         {
-            if (isPlayerConfirmed[p]) continue;
+            if (!participating[p] || isPlayerConfirmed[p]) continue;
             int hover = CardUnderCursor(cursorPos[p]);
             if (hover >= 0 && hover != playerCursorIndices[p])
             {
@@ -186,13 +224,13 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         }
         if (changed) { PlaySound(cursorMoveSfx); UpdateUI(); }
 
-        // 決定: 対象プレイヤー(数字キー押下 or activePlayer)のホバーカードを確定
+        // 決定: 「選んでいるプレイヤー(activePlayer)」のみ受け付ける。
+        // 非アクティブのカーソルは決定入力を受け付けない（暗いまま移動のみ可）。
         if (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame)
         {
-            for (int p = 0; p < numberOfPlayers; p++)
+            int p = activePlayer;
+            if (p >= 0 && p < numberOfPlayers && participating[p] && !isPlayerConfirmed[p])
             {
-                bool target = anyHeld ? holdP[p] : (p == activePlayer);
-                if (!target || isPlayerConfirmed[p]) continue;
                 int hover = CardUnderCursor(cursorPos[p]);
                 if (hover >= 0)
                 {
@@ -255,19 +293,49 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         cursorCanvas.sortingOrder = 500;
 
         cursorRT = new RectTransform[numberOfPlayers];
+        cursorImg = new UnityEngine.UI.Image[numberOfPlayers];
         cursorPos = new Vector2[numberOfPlayers];
         for (int p = 0; p < numberOfPlayers; p++)
         {
+            // 非参加プレイヤーはカーソルを出さない(cursorRT[p]/cursorImg[p] は null のまま)
+            if (!participating[p]) continue;
+
             var img = new GameObject($"Cursor{p + 1}", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image))
                 .GetComponent<UnityEngine.UI.Image>();
             img.transform.SetParent(cursorCanvas.transform, false);
             img.sprite = CursorSprite.CreatePointer(PlayerColor(p));  // ゲーム共通のマウスカーソル絵
             img.raycastTarget = false;
             cursorRT[p] = img.rectTransform;
+            cursorImg[p] = img;
             cursorRT[p].pivot = CursorSprite.TipPivot;                // 先端がカーソル座標に来る
             cursorRT[p].sizeDelta = new Vector2(58f, 58f);
             cursorPos[p] = new Vector2(Screen.width * (0.32f + 0.12f * p), Screen.height * 0.55f);
             cursorRT[p].position = cursorPos[p];
+        }
+        RefreshCursorVisual();
+    }
+
+    /// <summary>
+    /// 「選んでいるプレイヤー(activePlayer)」のカーソルだけをアクティブ表示にし、
+    /// それ以外は暗く(半透明)する。非アクティブでも移動自体は可能（決定は受け付けない）。
+    /// </summary>
+    private void RefreshCursorVisual()
+    {
+        if (cursorImg == null) return;
+        for (int p = 0; p < numberOfPlayers; p++)
+        {
+            if (cursorImg[p] == null) continue;
+            // sprite に色が焼き込まれているため、白=そのまま / グレー低アルファ=減光。
+            cursorImg[p].color = (p == activePlayer)
+                ? Color.white
+                : new Color(0.5f, 0.5f, 0.5f, 0.4f);
+        }
+        // アクティブなカーソルを最前面へ(切替時のみ)
+        if (activePlayer != lastActiveVisual)
+        {
+            if (activePlayer >= 0 && activePlayer < cursorRT.Length && cursorRT[activePlayer] != null)
+                cursorRT[activePlayer].SetAsLastSibling();
+            lastActiveVisual = activePlayer;
         }
     }
 
@@ -302,8 +370,13 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
 
         Debug.Log($"プレイヤー{pIdx + 1} が {selectedCharacters[pIdx].displayName} を確定");
 
-        // 全員決定チェック
-        if (isPlayerConfirmed.All(c => c))
+        // 全員決定チェック(参加者のみ)
+        bool allDone = true;
+        for (int i = 0; i < 4; i++)
+        {
+            if (participating[i] && !isPlayerConfirmed[i]) { allDone = false; break; }
+        }
+        if (allDone)
         {
             OnAllPlayersSelected();
         }
@@ -322,10 +395,10 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         
         if (isPlayerConfirmed[displayIdx] && debugActivePlayer == 0)
         {
-            // 最後に操作したプレイヤーが確定済みなら、まだ選んでいない人を見せる
+            // 最後に操作したプレイヤーが確定済みなら、まだ選んでいない参加者を見せる
             for (int i = 0; i < 4; i++)
             {
-                if (!isPlayerConfirmed[i])
+                if (participating[i] && !isPlayerConfirmed[i])
                 {
                     displayIdx = i;
                     break;
@@ -363,17 +436,18 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
     {
         Debug.Log("全プレイヤーがキャラクターを選択しました");
 
-        // GameSceneManagerにパーティ情報を保存
+        // GameSceneManagerにパーティ情報を保存(参加者のみ。非参加スロットは null)
         if (GameSceneManager.Instance != null)
         {
-            GameSceneManager.Instance.selectedCharacter = selectedCharacters[0];
-            for (int i = 0; i < selectedCharacters.Length; i++)
+            var gsm = GameSceneManager.Instance;
+            CharacterData first = null;
+            for (int i = 0; i < gsm.selectedParty.Length; i++)
             {
-                if (i < GameSceneManager.Instance.selectedParty.Length)
-                {
-                    GameSceneManager.Instance.selectedParty[i] = selectedCharacters[i];
-                }
+                CharacterData c = (i < selectedCharacters.Length && participating[i]) ? selectedCharacters[i] : null;
+                gsm.selectedParty[i] = c;
+                if (first == null && c != null) first = c;
             }
+            gsm.selectedCharacter = first; // 1人目 = 最初の参加者
         }
 
         // バトルシーンへ遷移

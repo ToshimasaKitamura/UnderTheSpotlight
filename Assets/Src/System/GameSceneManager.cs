@@ -51,6 +51,24 @@ public class GameSceneManager : MonoBehaviour
     public int bossIndex;
     public bool isVictory;
 
+    /// <summary>
+    /// ステージセレクト画面(ロビー)で参加したプレイヤー。index=プレイヤー番号(0=P1..3=P4)。
+    /// ローカル/ネット問わずここで募集し、以降のキャラ選択・バトルへ引き継ぐ。
+    /// 何も参加していない(全 false)場合は「未募集」= 直接シーン再生とみなす。
+    /// </summary>
+    public bool[] joinedPlayers = new bool[4];
+
+    /// <summary>参加人数(1〜4)。0 は未募集。</summary>
+    public int JoinedCount
+    {
+        get
+        {
+            int c = 0;
+            for (int i = 0; i < joinedPlayers.Length; i++) if (joinedPlayers[i]) c++;
+            return c;
+        }
+    }
+
     private void Awake()
     {
         if (_instance != null && _instance != this)

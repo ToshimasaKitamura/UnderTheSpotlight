@@ -16,6 +16,7 @@
 |---|---|
 | ゲーム全体像・プレイヤー数・勝敗 | [Specifications/GAME_SPECIFICATION.md](Specifications/GAME_SPECIFICATION.md) |
 | シーン遷移・各シーンの操作 | [Specifications/GAME_FLOW.md](Specifications/GAME_FLOW.md) |
+| オンライン対戦（部屋/コード/参加枠） | [Design/Networking_Design.md](Design/Networking_Design.md) |
 | フォント・テーマカラー（見た目） | [Specifications/デザインテーマ.md](Specifications/デザインテーマ.md) |
 | フォルダ構成・ファイル配置 | [フォルダ構成.md](フォルダ構成.md) |
 | 各システムの詳細設計 | `Design/<システム>_Design.md`（下表） |
@@ -35,6 +36,7 @@
 - [CharacterPassive_Design.md](Design/CharacterPassive_Design.md) — キャラLv/パッシブ
 - [CsvWorkflow.md](Design/CsvWorkflow.md) — CSV パラメータ管理
 - [DodgePhase_Design.md](Design/DodgePhase_Design.md) — 弾幕回避フェーズ
+- [Networking_Design.md](Design/Networking_Design.md) — オンライン対戦（ロビー/部屋コード）
 - [PartDestruction_Design.md](Design/PartDestruction_Design.md) — 部位破壊
 - [StageMap_Design.md](Design/StageMap_Design.md) — ステージマップ
 

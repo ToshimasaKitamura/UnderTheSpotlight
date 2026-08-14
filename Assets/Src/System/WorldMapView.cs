@@ -36,6 +36,15 @@ public class WorldMapView : MonoBehaviour
     public int CursorIndex { get; private set; } = 0;
     public bool IsLocked { get; private set; } = false;
 
+    // ===== マルチプレイヤー・ロビー表示状態(コントローラーから毎フレーム供給) =====
+    private Vector2[] lobbyCursorScreen;   // 各プレイヤーのカーソル画面座標(px, y-down)
+    private bool[] lobbyJoined;            // 各スロットが参加(占有)済みか(下部の募集枠表示)
+    private bool[] lobbyCursorMask;       // このマシンでカーソルを描く/動かすスロット(null=lobbyJoinedと同じ)
+    private int lobbyActivePlayer = -1;    // デバッグ操作中のプレイヤー(強調用)
+    private int gatherNodeIndex = -1;      // 集合カウントダウン中のノード
+    private float gatherProgress01 = 0f;   // 0〜1
+    private Texture2D[] playerCursorTex;   // プレイヤー色ごとの矢印カーソル
+
     private Canvas canvas;
     private RectTransform panContainer;
     private List<NodeUi> nodes = new List<NodeUi>();
@@ -100,6 +109,7 @@ public class WorldMapView : MonoBehaviour
         pixelScale = Mathf.Max(2, Screen.height / 360);
 
         CreateTextures();
+        CreatePlayerCursorTextures();
         CreateDecorationTextures();
         InitializeStars();
         InitializeNebulae();
@@ -178,9 +188,18 @@ public class WorldMapView : MonoBehaviour
             new Color(0.3f, 0.4f, 0.6f),
             pixelScale);
 
-        // 操作説明
+        // 操作説明(ロビー: 数字+Enter で参加、数字+移動で自分のカーソル、ノードに集合で出撃)
         controlHintTexture = PixelFontRenderer.RenderText(
-            "ARROW:SELECT  Z:OK  X:BACK", new Color(0.5f, 0.6f, 0.7f), pixelScale - 1);
+            "NUM+ENTER:JOIN  NUM+MOVE:CURSOR  GATHER:GO", new Color(0.5f, 0.6f, 0.7f), pixelScale - 1);
+    }
+
+    private void CreatePlayerCursorTextures()
+    {
+        var pal = GameColorScheme.Players;
+        int n = (pal != null) ? pal.Length : 4;
+        playerCursorTex = new Texture2D[n];
+        for (int p = 0; p < n; p++)
+            playerCursorTex[p] = CursorSprite.CreatePointerTexture(pal != null ? pal[p] : Color.white);
     }
 
     private Texture2D CreatePixelNode(int size, Color color, bool animated)
@@ -243,6 +262,13 @@ public class WorldMapView : MonoBehaviour
         {
             foreach (var tex in stageNameTextures)
                 if (tex != null) Destroy(tex);
+        }
+
+        if (playerCursorTex != null)
+        {
+            foreach (var tex in playerCursorTex)
+                if (tex != null) Destroy(tex);
+            playerCursorTex = null;
         }
     }
 
@@ -660,6 +686,66 @@ public class WorldMapView : MonoBehaviour
         ApplyHighlight();
     }
 
+    // ===== マルチプレイヤー・ロビー用 API =====
+
+    /// <summary>ノード数(ステージ数)。</summary>
+    public int NodeCount => nodes.Count;
+
+    /// <summary>ノード i の画面中心座標(px, y-down)。DrawNodes と一致させる。</summary>
+    public Vector2 NodeScreenCenter(int i)
+    {
+        if (i < 0 || i >= nodes.Count) return Vector2.zero;
+        var a = nodes[i].anchor;
+        return new Vector2(a.x * Screen.width, (1f - a.y) * Screen.height);
+    }
+
+    /// <summary>ノード i のステージ。</summary>
+    public StageData StageAt(int i) => (i >= 0 && i < nodes.Count) ? nodes[i].stage : null;
+
+    /// <summary>画面座標から半径 radiusPx 以内で最も近いノード index。無ければ -1。</summary>
+    public int NearestNodeWithin(Vector2 screenPos, float radiusPx)
+    {
+        int best = -1;
+        float bestSq = radiusPx * radiusPx;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i].stage == null) continue;
+            float d = (NodeScreenCenter(i) - screenPos).sqrMagnitude;
+            if (d <= bestSq) { bestSq = d; best = i; }
+        }
+        return best;
+    }
+
+    /// <summary>各プレイヤーのカーソル位置・参加状態を供給する(描画用)。</summary>
+    public void SetPlayerCursors(Vector2[] screenPos, bool[] joined, int activePlayer)
+        => SetPlayerCursors(screenPos, joined, null, activePlayer);
+
+    /// <summary>
+    /// 参加状態(下部募集枠)と、カーソルを描くスロット(cursorMask)を別々に供給する。
+    /// cursorMask=null なら joined と同じ(ローカル対戦: 参加者全員のカーソルを描く)。
+    /// オンライン時は自分のスロットだけ描くため cursorMask を絞る。
+    /// </summary>
+    public void SetPlayerCursors(Vector2[] screenPos, bool[] joined, bool[] cursorMask, int activePlayer)
+    {
+        lobbyCursorScreen = screenPos;
+        lobbyJoined = joined;
+        lobbyCursorMask = cursorMask;
+        lobbyActivePlayer = activePlayer;
+    }
+
+    /// <summary>集合カウントダウンの対象ノードと進捗(0〜1)。nodeIndex&lt;0 で非表示。</summary>
+    public void SetGather(int nodeIndex, float progress01)
+    {
+        gatherNodeIndex = nodeIndex;
+        gatherProgress01 = Mathf.Clamp01(progress01);
+    }
+
+    /// <summary>ステージ名・強調表示のフォーカスノードを指定(既存の CursorIndex を流用)。</summary>
+    public void SetFocusNode(int nodeIndex)
+    {
+        if (nodeIndex >= 0 && nodeIndex < nodes.Count) CursorIndex = nodeIndex;
+    }
+
     public void Confirm()
     {
         if (IsLocked || nodes.Count == 0) return;
@@ -744,10 +830,116 @@ public class WorldMapView : MonoBehaviour
         DrawSparkles();
         DrawPaths();
         DrawNodes();
+        DrawGather();
         DrawCorners();
         DrawHeader();
         DrawHUD();
+        DrawLobby();
+        DrawPlayerCursors();
         DrawControlHints();
+    }
+
+    /// <summary>集合カウントダウン: 対象ノードの周りにリングと残り秒数を表示。</summary>
+    private void DrawGather()
+    {
+        if (gatherNodeIndex < 0 || gatherNodeIndex >= nodes.Count) return;
+        Vector2 c = NodeScreenCenter(gatherNodeIndex);
+
+        // オーラを進捗で拡大＋点滅
+        if (selectionAuraTexture != null)
+        {
+            float sz = selectionAuraTexture.width * (1.4f + gatherProgress01 * 1.2f);
+            Color prev = GUI.color;
+            GUI.color = new Color(1f, 0.95f, 0.5f, 0.35f + 0.4f * gatherProgress01);
+            GUI.DrawTexture(new Rect(c.x - sz / 2f, c.y - sz / 2f, sz, sz), selectionAuraTexture);
+            GUI.color = prev;
+        }
+
+        // 進捗バー(ノード下)
+        float barW = nodeSize.x * 2.2f;
+        float barH = pixelScale * 4f;
+        float barX = c.x - barW / 2f;
+        float barY = c.y + nodeSize.y * 0.7f + pixelScale * 20f;
+        Texture2D barBg = PixelFontRenderer.CreatePixelBox((int)barW, (int)barH,
+            new Color(0.02f, 0.02f, 0.05f, 0.9f), nodeSelectColor * 0.6f, 1);
+        GUI.DrawTexture(new Rect(barX, barY, barW, barH), barBg);
+        Destroy(barBg);
+        if (gatherProgress01 > 0f)
+        {
+            Texture2D fill = PixelFontRenderer.CreatePixelBox(
+                Mathf.Max(1, (int)((barW - pixelScale * 2) * gatherProgress01)), (int)(barH - pixelScale * 2),
+                GameColorScheme.Accent, GameColorScheme.Accent, 0);
+            GUI.DrawTexture(new Rect(barX + pixelScale, barY + pixelScale,
+                (barW - pixelScale * 2) * gatherProgress01, barH - pixelScale * 2), fill);
+            Destroy(fill);
+        }
+
+        // 残り秒数(3..2..1)
+        int remain = Mathf.CeilToInt((1f - gatherProgress01) * 3f);
+        remain = Mathf.Clamp(remain, 1, 3);
+        Texture2D numTex = PixelFontRenderer.RenderText(remain.ToString(), GameColorScheme.Accent, pixelScale + 2);
+        if (numTex != null)
+        {
+            float ny = c.y - nodeSize.y * 0.7f - numTex.height - pixelScale * 6f;
+            GUI.DrawTexture(new Rect(c.x - numTex.width / 2f, ny, numTex.width, numTex.height), numTex);
+            Destroy(numTex);
+        }
+    }
+
+    /// <summary>ロビー: 画面下部に P1〜P4 の参加/空き枠を表示。</summary>
+    private void DrawLobby()
+    {
+        var pal = GameColorScheme.Players;
+        int n = (pal != null) ? pal.Length : 4;
+
+        float slotW = pixelScale * 52f;
+        float slotH = pixelScale * 22f;
+        float gap = pixelScale * 6f;
+        float totalW = slotW * n + gap * (n - 1);
+        float startX = (Screen.width - totalW) / 2f;
+        float y = Screen.height - slotH - pixelScale * 10f;
+
+        for (int p = 0; p < n; p++)
+        {
+            bool joined = lobbyJoined != null && p < lobbyJoined.Length && lobbyJoined[p];
+            Color pcol = pal != null ? pal[p] : Color.white;
+            float x = startX + p * (slotW + gap);
+
+            Color frame = joined ? pcol : new Color(0.35f, 0.35f, 0.42f, 1f);
+            Color bg = joined ? new Color(pcol.r * 0.22f, pcol.g * 0.22f, pcol.b * 0.22f, 0.95f)
+                              : new Color(0.05f, 0.05f, 0.08f, 0.85f);
+            int border = (p == lobbyActivePlayer) ? pixelScale * 2 : pixelScale;
+            Texture2D box = PixelFontRenderer.CreatePixelBox((int)slotW, (int)slotH, bg, frame, border);
+            GUI.DrawTexture(new Rect(x, y, slotW, slotH), box);
+            Destroy(box);
+
+            string label = $"P{p + 1} " + (joined ? "IN" : "---");
+            Color txtCol = joined ? pcol : new Color(0.6f, 0.6f, 0.68f, 1f);
+            Texture2D t = PixelFontRenderer.RenderText(label, txtCol, pixelScale);
+            if (t != null)
+            {
+                GUI.DrawTexture(new Rect(x + (slotW - t.width) / 2f, y + (slotH - t.height) / 2f, t.width, t.height), t);
+                Destroy(t);
+            }
+        }
+    }
+
+    /// <summary>参加済みプレイヤーの矢印カーソルを描画。</summary>
+    private void DrawPlayerCursors()
+    {
+        if (lobbyCursorScreen == null || playerCursorTex == null) return;
+        var mask = lobbyCursorMask ?? lobbyJoined; // null なら参加者=カーソル表示
+        for (int p = 0; p < lobbyCursorScreen.Length; p++)
+        {
+            if (mask == null || p >= mask.Length || !mask[p]) continue;
+            if (p >= playerCursorTex.Length || playerCursorTex[p] == null) continue;
+            Vector2 pos = lobbyCursorScreen[p];
+            float size = CursorSprite.PointerSize;
+            // 先端をカーソル座標に合わせる
+            float dx = pos.x - CursorSprite.TipPixel.x;
+            float dy = pos.y - CursorSprite.TipPixel.y;
+            GUI.DrawTexture(new Rect(dx, dy, size, size), playerCursorTex[p]);
+        }
     }
 
     private void DrawBackground()

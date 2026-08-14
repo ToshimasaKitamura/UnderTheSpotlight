@@ -119,11 +119,27 @@
 
 ## 6. UI
 
-### マップ画面
+### マップ画面（＝プレイヤー募集ロビーを兼ねる）
 - 上半分: 背景画像(草原・洞窟等のステージ並び)
 - ノード = アイコン(クリア済み/解放中/未解放で色分け)
-- カーソルキーでノード移動、Enter で突入
 - 解放済みノードは前後ノードへの矢印描画
+- **入場した瞬間からカーソル操作が有効**(待ち時間・ロック無し)
+
+#### プレイヤー（ローカル操作 ＋ オンライン募集）
+- **ローカル操作は P1 の1カーソルのみ**。矢印/WASD で自分のカーソルを動かす
+  （※数字キーによる多人数切替・ローカル参加トグルは廃止）。
+- **カーソル**: プレイヤー色の共通マウスカーソル（[CursorSprite]）を表示。
+  オンライン参加者は各自のカーソルが**リアルタイム同期**で見える（[Networking_Design.md](Networking_Design.md#6-カーソル同期)）。
+- **追加プレイヤー = オンライン参加**: 右上「NET」アイコンから部屋を建てる/入る。
+  参加順に 2P/3P/4P が割り当たり、下部の募集枠に反映（正典 [Networking_Design.md](Networking_Design.md)）。
+  確定した参加者は以降のキャラ選択・バトルへ引き継ぐ（`GameSceneManager.joinedPlayers`）。
+- **出撃(ステージ突入)**: 決定ボタンではなく **参加者が同じノードに集合 → 約3秒**維持で自動突入。
+  離れると即リセット。※**オフライン(P1のみ)で有効**。オンラインの同期出撃は未実装
+  （[Networking_Design.md](Networking_Design.md#7-既知の範囲今回は未実装今後)）。
+- `Esc`/`X` でタイトルへ戻る。
+
+> 実装: [WorldMapSceneController](../../Assets/Src/System/WorldMapSceneController.cs)(入力・集合判定・カーソル同期)、
+> [WorldMapView](../../Assets/Src/System/WorldMapView.cs)(ノード/カーソル/募集枠/カウントダウン描画)。
 
 ### 連戦中の小演出
 - ボス撃破 → 「敵撃破! +N exp / +M bombs」フラッシュ(2秒) → 次ボス入場アニメ
@@ -158,7 +174,7 @@ GameTuning 拡張:
 **Step A — マップ最小 — ✅ 実装済み(視覚仕上げ4パス完了)**
 - ✅ `StageData` / `WorldMapData` (ScriptableObject 定義)
 - ✅ `RunProgress` (シーン常駐、現在ステージ・連戦インデックス・累積exp/bombs)
-- ✅ `WorldMapPhase` (IBattlePhase) + `WorldMapView` (ノードボタン UI、←→で選択 / Enter で突入)
+- ✅ `WorldMapPhase` (IBattlePhase) + `WorldMapView` (ノード UI)。独立シーンの操作はロビー方式(§6)。
 - ✅ `BattleStateMachine.State.WorldMap` 追加 + initialState で起動状態を切替可能
 - ✅ Dodge 終了時に `RunProgress.OnBossDefeated()` → 連戦継続なら CardSelect、完全クリアなら WorldMap へ
 - ✅ ステージ突入時に `EnemyRuntimeState.enemyData` を選ばれた最初のボスへ差し替え

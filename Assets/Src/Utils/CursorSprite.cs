@@ -10,10 +10,23 @@ public static class CursorSprite
     /// <summary>カーソル先端(左上)の pivot。RectTransform.pivot にこれを使うと先端がその座標に来る。</summary>
     public static readonly Vector2 TipPivot = new Vector2(0.125f, 0.9375f);
 
+    /// <summary>ポインタテクスチャの一辺(px)。</summary>
+    public const int PointerSize = 64;
+
+    /// <summary>先端の「左上からの画素オフセット」(y-down)。IMGUI(GUI.DrawTexture)で先端を座標に合わせる用。</summary>
+    public static readonly Vector2 TipPixel = new Vector2(8f, 4f);
+
     /// <summary>定番の矢印マウスポインタ(指定色＋暗いアウトライン)。先端が左上。</summary>
     public static Sprite CreatePointer(Color color)
     {
-        int size = 64;
+        var tex = CreatePointerTexture(color);
+        return Sprite.Create(tex, new Rect(0, 0, PointerSize, PointerSize), TipPivot, PointerSize);
+    }
+
+    /// <summary>矢印ポインタの Texture2D。uGUI ではなく IMGUI(GUI.DrawTexture)で描く画面向け。</summary>
+    public static Texture2D CreatePointerTexture(Color color)
+    {
+        int size = PointerSize;
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         var px = new Color[size * size];
         for (int i = 0; i < px.Length; i++) px[i] = Color.clear;
@@ -66,7 +79,7 @@ public static class CursorSprite
         tex.SetPixels(outlined);
         tex.Apply();
         tex.filterMode = FilterMode.Bilinear;
-        return Sprite.Create(tex, new Rect(0, 0, size, size), TipPivot, size);
+        return tex;
     }
 
     private static bool PointInPolygon(Vector2 p, Vector2[] poly)
