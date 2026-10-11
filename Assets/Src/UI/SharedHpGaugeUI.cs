@@ -50,6 +50,9 @@ public class SharedHpGaugeUI : MonoBehaviour
             currentHp = source.CurrentHp;
             maxHp = source.maxHp;
         }
+        // 味方HPはオレンジに固定(シーン保存値に左右されないようコードで上書き)。
+        fillColor = new Color(1f, 0.55f, 0.12f, 1f);   // オレンジ
+        dangerColor = new Color(1f, 0.35f, 0.1f, 1f);  // 低HP時は濃いオレンジ寄りの赤
         CreateTextures();
     }
 
@@ -65,8 +68,21 @@ public class SharedHpGaugeUI : MonoBehaviour
         DestroyTextures();
     }
 
+    // ダメージ演出(削れた分が光って消える＋ゲージが揺れる)
+    private const float DamageEffectDuration = 0.45f;
+    private float damageEffectTimer;
+    private float ghostFromRatio;  // 旧HP比率
+    private float ghostToRatio;    // 新HP比率
+
     private void HandleChanged(int cur, int max)
     {
+        if (max > 0 && cur < currentHp)
+        {
+            // 減少 → ダメージ演出を発火(削れた区間を記録)
+            ghostFromRatio = Mathf.Clamp01((float)currentHp / max);
+            ghostToRatio = Mathf.Clamp01((float)cur / max);
+            damageEffectTimer = DamageEffectDuration;
+        }
         currentHp = cur;
         maxHp = max;
     }
@@ -127,6 +143,8 @@ public class SharedHpGaugeUI : MonoBehaviour
             blinkTimer = 0f;
         }
 
+        if (damageEffectTimer > 0f) damageEffectTimer -= Time.deltaTime;
+
         // ラベルテクスチャの更新
         if (currentHp != lastDisplayedHp || maxHp != lastDisplayedMax)
         {
@@ -151,6 +169,13 @@ public class SharedHpGaugeUI : MonoBehaviour
         float x = (Screen.width - barWidth) / 2f;
         float y = Screen.height - bottomOffset - barHeight;
 
+        // ダメージ中はゲージを横に揺らす(減衰する振動)
+        if (damageEffectTimer > 0f)
+        {
+            float pShake = damageEffectTimer / DamageEffectDuration;
+            x += Mathf.Sin(damageEffectTimer * 90f) * 6f * pShake;
+        }
+
         // 背景
         GUI.DrawTexture(new Rect(x, y, barWidth, barHeight), bgTexture, ScaleMode.StretchToFill);
 
@@ -165,13 +190,47 @@ public class SharedHpGaugeUI : MonoBehaviour
             bool isDanger = ratio <= 0.25f;
             Texture2D barTex = isDanger ? dangerTexture : fillTexture;
 
-            // 危険時は点滅
-            if (!isDanger || blinkOn)
+            // 危険時はバーを消さず色の明滅で警告する。
+            // (フィルを描画ON/OFFすると残量が「1↔0」に点滅して見えるため、アルファのみ明滅させる)
+            Color prevColor = GUI.color;
+            if (isDanger) GUI.color = blinkOn ? Color.white : new Color(1f, 1f, 1f, 0.5f);
+            GUI.DrawTexture(
+                new Rect(x + padding, y + padding, fillWidth, fillHeight),
+                barTex, ScaleMode.StretchToFill);
+            GUI.color = prevColor;
+        }
+
+        // ダメージ演出: 削れた区間(新HP→旧HP)を白→赤で光らせてフェードアウト
+        if (damageEffectTimer > 0f && maxHp > 0)
+        {
+            float p = Mathf.Clamp01(damageEffectTimer / DamageEffectDuration);
+            float innerW = barWidth - padding * 2;
+            float gx = x + padding + innerW * ghostToRatio;
+            float gw = innerW * Mathf.Max(0f, ghostFromRatio - ghostToRatio);
+            if (gw > 0.5f)
             {
-                GUI.DrawTexture(
-                    new Rect(x + padding, y + padding, fillWidth, fillHeight),
-                    barTex, ScaleMode.StretchToFill);
+                Color prevColor = GUI.color;
+                Color ghost = Color.Lerp(new Color(1f, 0.35f, 0.3f, 1f), Color.white, p); // 序盤=白→終盤=赤
+                ghost.a = p;
+                GUI.color = ghost;
+                GUI.DrawTexture(new Rect(gx, y + padding, gw, fillHeight), Texture2D.whiteTexture);
+                GUI.color = prevColor;
             }
+        }
+
+        // 区切り線(最大HP分割 = 5段階)。各HP境界に縦線を引いて段階を見せる。
+        if (maxHp > 1)
+        {
+            float innerW = barWidth - padding * 2;
+            float segW = innerW / maxHp;
+            Color prevColor = GUI.color;
+            GUI.color = borderColor;
+            for (int i = 1; i < maxHp; i++)
+            {
+                float lx = x + padding + segW * i - 1f;
+                GUI.DrawTexture(new Rect(lx, y + padding, 2f, fillHeight), Texture2D.whiteTexture);
+            }
+            GUI.color = prevColor;
         }
 
         // ラベル(中央)

@@ -89,7 +89,9 @@ Check 合格かつ Act 完了で初めて「完了」。
 ### フォント / IMGUI（Unity 6）
 - IMGUI の `GUIStyle.font` に `Font.CreateDynamicFontFromOSFont`（動的OSフォント）を使うと、TextCore の `FontAsset.CreateFontAsset` で例外が出てラベルが壊れる
 - 日本語ラベルはインポート済みフォント（`Resources/Fonts/misaki_gothic`）を使う。共通処理は `GameFont.Body()` を経由する
+- 動的フォントを GL/低レベルで自前描画するときは **`RequestCharactersInTexture` → `material.SetPass(0)` → 描画** の順を厳守（逆順だと再構築前の古いアトラスをバインドし、新規文字だけ空描画＝「?」化する）
 
 ### シリアライズ
 - `[SerializeField]` の既定値をコードで変えても、既にシーン/プレハブに保存済みのインスタンスには反映されない
 - コード変更を必ず効かせたい調整値は、非シリアライズの private フィールドにする
+- Inspector 参照は未割り当て(null)のことがある。`if (x == null) return;` 等のガードの**後ろ**に必須処理を書くと、その参照が外れている環境で丸ごとスキップされる。必ず効かせたい処理はガードの**前**に置く

@@ -21,6 +21,10 @@ public class DodgeVisuals : MonoBehaviour
     public float fieldScaleDuration = 0.4f;
     public float centralFieldAppearScale = 1f;
     public float playerExitDuration = 0.4f;
+    // 退避時に下へ下げるビューポート量。下段の四隅窓に届かない安全範囲に留める。
+    // (SpriteMask は全窓に作用するため、下げ過ぎると上段キャラが下段窓に写り込む。
+    //  静止時スプライト下端は下段窓の上端から innerH*0.15≈0.05vp 上にあるので、それ未満にする)
+    public float exitDropViewport = 0.035f;
     public float playerSideEntryDuration = 0.5f;
     public float playerReturnDuration = 0.6f;
     public float playerSmallScale = 0.75f;   // 左右に控える時の縮小率(大きめ)
@@ -408,15 +412,34 @@ public class DodgeVisuals : MonoBehaviour
                 if (cam != null)
                 {
                     Vector3 vp = cam.WorldToViewportPoint(playersOriginalPosArr[i]);
-                    vp.y = Mathf.Lerp(vp.y, -0.2f, p);
+                    // 画面下まで下げず、自分の窓から出る分だけ下げる(下段窓への写り込み防止)
+                    float targetY = vp.y - exitDropViewport;
+                    vp.y = Mathf.Lerp(vp.y, targetY, p);
                     vp.z = GetSafeScreenZ(cam, playersOriginalPosArr[i]);
                     Vector3 world = cam.ViewportToWorldPoint(vp);
                     world.z = playersOriginalPosArr[i].z;
                     tr.position = world;
                 }
-                tr.localScale = Vector3.Lerp(playersOriginalScaleArr[i], playersOriginalScaleArr[i] * playerSmallScale, p);
+                // 縮小＋フェードで「自分の枠の中に沈んで消える」ように見せる(枠外・他窓へ出さない)
+                tr.localScale = Vector3.Lerp(playersOriginalScaleArr[i], playersOriginalScaleArr[i] * 0.45f, p);
+                SetCharAlpha(i, 1f - p);
             }
             yield return null;
+        }
+
+        // 直後に枠を隠す(クリップ解除)ため、保険として描画を切る。
+        // 次の PlayPlayersSideEntry が左右へ配置し直し、表示とアルファを戻す。
+        if (playerTransforms != null)
+            for (int i = 0; i < playerTransforms.Length; i++) SetCharVisible(i, false);
+    }
+
+    /// <summary>キャラの SpriteRenderer 群のアルファを設定する(フェード用)。</summary>
+    private void SetCharAlpha(int i, float a)
+    {
+        if (playerTransforms == null || i < 0 || i >= playerTransforms.Length || playerTransforms[i] == null) return;
+        foreach (var sr in playerTransforms[i].GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            var c = sr.color; c.a = a; sr.color = c;
         }
     }
 
@@ -439,7 +462,16 @@ public class DodgeVisuals : MonoBehaviour
         charFloating = new bool[n];
         charColor = new Color[n];
         charRoutine = new Coroutine[n];
-        for (int m = 0; m < n; m++) { charFloating[m] = true; charColor[m] = Color.white; }
+        // 退避(PlayPlayersExitDown)で描画を切った/縮小・透明化したキャラをここで元に戻す。
+        for (int m = 0; m < n; m++)
+        {
+            charFloating[m] = true;
+            charColor[m] = Color.white;
+            SetCharVisible(m, true);
+            SetCharAlpha(m, 1f);
+            if (playerTransforms[m] != null && playersOriginalScaleArr != null && m < playersOriginalScaleArr.Length)
+                playerTransforms[m].localScale = playersOriginalScaleArr[m] * playerSmallScale;
+        }
         activeCharIndex = -1;
 
         int leftCount = Mathf.CeilToInt(n / 2f);   // 前半を左、後半を右に振り分け

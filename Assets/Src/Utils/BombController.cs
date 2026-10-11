@@ -25,9 +25,10 @@ public class BombController : MonoBehaviour
 
     void Awake()
     {
+        // 人数は tuning 未割り当てでも必ず反映する(選択パーティがあれば参加人数、無ければ tuning/既定)
+        playerCount = BattleParty.Count(tuning);
         if (tuning != null)
         {
-            playerCount = tuning.playerCount;
             initialBombsPerPlayer = tuning.GetInt("bombsPerPlayer", initialBombsPerPlayer);
         }
         ResetAll();

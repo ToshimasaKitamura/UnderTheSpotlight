@@ -112,6 +112,12 @@ public class GameTuning : ScriptableObject
     [Header("Dodge")]
     public float playerTurnDuration = 4f;
 
+    [Header("Danmaku(弾幕の進行難易度ランプ)")]
+    [Tooltip("連戦のボスが進むごとの弾速上昇率(0.12=ボス1体進むごとに+12%)。弾幕の基本弾速は EnemyData 側で定義。")]
+    public float danmakuSpeedRampPerBoss = 0.12f;
+    [Tooltip("連戦のボスが進むごとの弾数上昇率(0=弾数は据え置き)。")]
+    public float danmakuDensityRampPerBoss = 0f;
+
     [Header("フォント(プロジェクト全体)")]
     [Tooltip("装飾的なフォント(タイトル / ヘッダ / 大きな数字)。未指定なら OS の明朝系を自動採用。")]
     public Font displayFont;

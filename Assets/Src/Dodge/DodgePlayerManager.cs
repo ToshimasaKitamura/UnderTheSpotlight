@@ -86,7 +86,9 @@ public class DodgePlayerManager : MonoBehaviour
     {
         var tmObj = new GameObject("PlayerTurnManager");
         TurnManager = tmObj.AddComponent<PlayerTurnManager>();
-        TurnManager.playerCount = (playerColors != null) ? playerColors.Length : 4;
+        // 参加人数(選択パーティ)に合わせる。色配列(最大4)を上限にクランプ。
+        int maxColors = (playerColors != null) ? playerColors.Length : 4;
+        TurnManager.playerCount = Mathf.Clamp(BattleParty.Count(null), 1, maxColors);
         TurnManager.turnDuration = playerTurnDuration;
         TurnManager.ActivePlayerChanged += OnActivePlayerChanged;
         TurnManager.RoundCompleted += OnRoundCompletedInternal;

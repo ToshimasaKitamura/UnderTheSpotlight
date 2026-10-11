@@ -53,13 +53,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     /// <summary>このフェーズでの成功数(次フェーズ等が参照可能)。</summary>
     public int SuccessCount { get; private set; }
 
-    [Header("【仮】ボス撃破条件")]
-    [Tooltip("アクションコマンド成功が累計これだけ溜まるとボス撃破(勝利)。四人分成功で倒せる想定=4")]
-    [SerializeField] private int hitsToDefeatBoss = 4;
     [Tooltip("非攻撃カード(回復/防御/バフ等)がデフォルト攻撃で与える基礎威力")]
     [SerializeField] private int nonAttackDefaultPower = 1;
-    // 累計成功数。ラウンドをまたいで蓄積する(Enterでリセットしない)。
-    private int cumulativeHits;
 
     // ダメージ演出用: 敵(ボス)の視覚参照とホーム位置・揺れコルーチン
     private Transform cachedEnemyTf;
@@ -71,6 +66,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     public int RoundsPlayed { get; private set; }
     /// <summary>各プレイヤーの成功回数(部位破壊のダメージ適用判定に使う)。</summary>
     public IReadOnlyList<int> PerPlayerSuccess => perPlayerSuccess;
+    /// <summary>各プレイヤーがこのACで与えた累計ダメージ(デバッグ表示用)。</summary>
+    public IReadOnlyList<int> PerPlayerDamage => perPlayerDamage;
 
     public bool BlocksDebugAdvance => true; // 自前で入力処理&遷移するためデバッグEnter抑止
 
@@ -79,6 +76,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     private RectTransform microRoot;
     private System.Random rng;
     private int[] perPlayerSuccess;
+    private int[] perPlayerDamage;
 
     // IMGUI用
     private ActionCommandIMGUIHelper guiHelper;
@@ -106,8 +104,9 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
     private void ApplyTuning()
     {
+        // 人数は tuning 未割り当てでも必ず反映する(選択パーティがあれば参加人数、無ければ tuning/既定)
+        playerCount = BattleParty.Count(tuning);
         if (tuning == null) return;
-        playerCount = tuning.playerCount;
         roundsPerActionCommand = tuning.roundsPerActionCommand;
         interRoundDelay = tuning.interRoundDelay;
         resultFlashDuration = tuning.resultFlashDuration;
@@ -135,6 +134,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         SuccessCount = 0;
         RoundsPlayed = 0;
         perPlayerSuccess = new int[Mathf.Max(1, playerCount)];
+        perPlayerDamage = new int[Mathf.Max(1, playerCount)];
         rng = new System.Random();
         hitEffects.Clear();
         bannerText = "";
@@ -302,16 +302,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
         routine = null;
 
-        // 【仮】累計成功が閾値に達したらボス撃破＝勝利。リザルト(勝利)へ。
-        if (cumulativeHits >= hitsToDefeatBoss)
-        {
-            UnityEngine.Debug.Log($"[ActionCommandPhase] 累計命中 {cumulativeHits}/{hitsToDefeatBoss} → ボス撃破！勝利");
-            var bsc = FindObjectOfType<BattleSceneController>();
-            if (bsc != null) bsc.OnBattleVictory();
-            else GameSceneManager.Instance?.GoToResult(true);
-            yield break;
-        }
-
+        // 撃破判定は BattleResultPhase が「全部位破壊」で行う。ここでは常に結果表示へ進む。
         UnityEngine.Debug.Log($"[ActionCommandPhase] 命中 {SuccessCount}/{playerCount} → BattleResult へ");
         if (stateMachine != null)
             stateMachine.ChangeState(BattleStateMachine.State.BattleResult);
@@ -334,7 +325,6 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         if (perPlayerSuccess != null && playerIndex < perPlayerSuccess.Length)
             perPlayerSuccess[playerIndex]++;
         SuccessCount++;
-        cumulativeHits++;
 
         int dmg = 0;
         string hitLabel = $"P{playerIndex + 1}";
@@ -359,6 +349,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
             {
                 enemyState.ApplyDamage(partId, dmg);
                 hitLabel += $" -{dmg}";
+                if (perPlayerDamage != null && playerIndex < perPlayerDamage.Length)
+                    perPlayerDamage[playerIndex] += dmg;
             }
         }
 

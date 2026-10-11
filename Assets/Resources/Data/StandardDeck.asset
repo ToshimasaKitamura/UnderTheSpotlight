@@ -11,7 +11,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 62e3c0ee95f384d31ad5f377ce0114fc, type: 3}
   m_Name: StandardDeck
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   entries:
   - card: {fileID: 11400000, guid: 55e8ec4614a2a46489a1cb9a98359a4b, type: 2}
     copies: 5
@@ -22,6 +22,6 @@ MonoBehaviour:
   - card: {fileID: 11400000, guid: ac786bd74962f4e30a3651dc73578fe8, type: 2}
     copies: 5
   - card: {fileID: 11400000, guid: 0426d4088cd94422fb6bdbd579424f9b, type: 2}
-    copies: 7
+    copies: 9
   - card: {fileID: 11400000, guid: 8c3c40948aacb43ffbfc2c4281ba0d88, type: 2}
-    copies: 3
+    copies: 1

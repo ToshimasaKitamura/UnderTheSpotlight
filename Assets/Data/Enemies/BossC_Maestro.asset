@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f244b77db34742a29831ee517e7edfb, type: 3}
+  m_Name: BossC_Maestro
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyData
+  id: boss_c
+  displayName: "座長"
+  parts:
+  - id: head
+    displayName: "頭"
+    maxHp: 9
+    zone: 0
+    destructionEffect: 1
+    hintCue: "指揮棒を額に当て「頭脳を乱されると…指揮が鈍る」(頭破壊で次の攻撃が弱まる)"
+    hitboxCenter: {x: 0.5, y: 0.82}
+    hitboxSize: {x: 0.35, y: 0.28}
+  - id: arms
+    displayName: "腕"
+    maxHp: 9
+    zone: 0
+    destructionEffect: 2
+    hintCue: "緑の光をまとわせ「この腕がある限り、何度でも立て直す」と嗤う(腕破壊で自己回復を封じる)"
+    hitboxCenter: {x: 0.5, y: 0.5}
+    hitboxSize: {x: 0.7, y: 0.28}
+  - id: legs
+    displayName: "足"
+    maxHp: 6
+    zone: 1
+    destructionEffect: 5
+    hintCue: "優雅にステップし「舞台から降ろせるかな？」(足破壊で移動を止められる)"
+    hitboxCenter: {x: 0.5, y: 0.18}
+    hitboxSize: {x: 0.55, y: 0.24}
+  icon: {fileID: 0}
+  bossSpriteName: AllChara_134
+  danmakuBulletsPerRing: 18
+  danmakuBulletSpeed: 3.2
+  danmakuFireInterval: 0.55
+  danmakuRingAngleStepDeg: 11
+  danmakuBulletKind: 0
+  danmakuPattern: 2
+  danmakuHealEveryNShots: 7

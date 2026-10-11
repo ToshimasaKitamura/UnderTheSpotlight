@@ -290,6 +290,31 @@ public class CardSelectStage : MonoBehaviour
         spotlight.transform.position = new Vector3(activePos.x, activePos.y, 0f);
     }
 
+    /// <summary>
+    /// カメラだけを全体表示(ホーム)へ戻す。キャラの強調/位置はそのまま維持する。
+    /// カード確定直後の「ボスに部位マーカーを出して狙う」ためにボスを画面へ収める用途。
+    /// </summary>
+    public IEnumerator MoveCameraHome(float dur)
+    {
+        if (targetCamera == null || !camSaved) yield break;
+        if (running != null) { StopCoroutine(running); running = null; }
+
+        Vector3 fromPos = targetCamera.transform.position;
+        float fromOrtho = targetCamera.orthographic ? targetCamera.orthographicSize : camHomeOrtho;
+        float t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / dur));
+            targetCamera.transform.position = Vector3.Lerp(fromPos, camHomePos, p);
+            if (targetCamera.orthographic)
+                targetCamera.orthographicSize = Mathf.Lerp(fromOrtho, camHomeOrtho, p);
+            yield return null;
+        }
+        targetCamera.transform.position = camHomePos;
+        if (targetCamera.orthographic) targetCamera.orthographicSize = camHomeOrtho;
+    }
+
     public void PlayReaction(int index)
     {
         if (index < 0 || index >= targets.Count) return;

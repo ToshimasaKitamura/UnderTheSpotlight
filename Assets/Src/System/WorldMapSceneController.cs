@@ -20,7 +20,8 @@ public class WorldMapSceneController : MonoBehaviour
 
     // ===== ロビー(プレイヤー募集)状態 =====
     // ローカル操作は自分のカーソル1つ(オフライン=P1 / オンライン=自分のスロット)を矢印/WASDで動かす。
-    // 追加プレイヤーはオンライン参加(右上 NET アイコン)で増える。数字キーの多人数切替は廃止。
+    // オフラインの追加プレイヤー(P2〜P4)は未参加ゲームパッドの A で参加・B で取消(ホットシート)。
+    // オンラインの追加プレイヤーは右上 NET アイコンから参加。
     private const int MaxPlayers = 4;
     private const float CursorSpeed = 900f;     // px/秒
     private const float NodeGatherRadius = 110f; // ノード集合とみなす半径(px)
@@ -28,6 +29,10 @@ public class WorldMapSceneController : MonoBehaviour
 
     private Vector2[] cursorPos = new Vector2[MaxPlayers];
     private bool[] joined = new bool[MaxPlayers];
+    // オフラインのローカル参加: 各スロットに割り当てたゲームパッド(スロット0=P1はキーボード操作なので未使用)
+    private readonly Gamepad[] slotPad = new Gamepad[MaxPlayers];
+    // オフラインはホットシート(P1がナビ)なのでカーソルはP1のみ描画する
+    private static readonly bool[] LeaderOnlyCursorMask = { true, false, false, false };
     private int activePlayer = 0;                // 直近に操作したプレイヤー
     private int gatherNode = -1;
     private float gatherTimer = 0f;
@@ -145,14 +150,59 @@ public class WorldMapSceneController : MonoBehaviour
         }
         else
         {
+            // オフラインのローカル参加(未参加ゲームパッドの A で P2〜P4 参加 / B で取消)
+            HandleOfflineLocalJoin();
             // --- 集合判定: 参加者全員が同じノードの近くにいたらカウントダウン ---
             UpdateGather(Time.deltaTime);
-            view.SetPlayerCursors(cursorPos, joined, activePlayer);
+            // 追加プレイヤーのカーソルは描かず、リーダー(P1)のカーソルだけ表示(ホットシート)
+            view.SetPlayerCursors(cursorPos, joined, LeaderOnlyCursorMask, activePlayer);
         }
 
         // --- キャンセル(タイトルへ戻る) ---
         if (kb.escapeKey.wasPressedThisFrame || kb.xKey.wasPressedThisFrame)
             GameSceneManager.Instance.GoToTitle();
+    }
+
+    /// <summary>
+    /// オフラインのローカル参加管理。未参加のゲームパッドが A(南ボタン)を押すと次の空きスロット(P2〜P4)に参加、
+    /// B(東ボタン)で取消(P1=スロット0 は常時参加で取消不可)。ホットシートのため追加プレイヤーのカーソルは
+    /// リーダー(P1)に追従させ、集合判定はリーダーの位置で成立させる。
+    /// </summary>
+    private void HandleOfflineLocalJoin()
+    {
+        var pads = Gamepad.all;
+        for (int i = 0; i < pads.Count; i++)
+        {
+            var pad = pads[i];
+            int slot = SlotOfPad(pad);
+            if (pad.buttonSouth.wasPressedThisFrame && slot < 0)
+            {
+                int free = NextFreeSlot();
+                if (free >= 1) { joined[free] = true; slotPad[free] = pad; }
+            }
+            else if (pad.buttonEast.wasPressedThisFrame && slot >= 1)
+            {
+                joined[slot] = false;
+                slotPad[slot] = null;
+            }
+        }
+        // 追加プレイヤーのカーソルはリーダー(P1)に追従させ、集合判定(全員が同一ノード)を成立させる
+        for (int p = 1; p < MaxPlayers; p++)
+            if (joined[p]) cursorPos[p] = cursorPos[0];
+    }
+
+    /// <summary>ゲームパッドが割り当てられている参加スロット(1〜3)。未割当は -1。</summary>
+    private int SlotOfPad(Gamepad pad)
+    {
+        for (int s = 1; s < MaxPlayers; s++) if (slotPad[s] == pad) return s;
+        return -1;
+    }
+
+    /// <summary>空いている追加スロット(1〜3)。満席は -1。</summary>
+    private int NextFreeSlot()
+    {
+        for (int s = 1; s < MaxPlayers; s++) if (!joined[s]) return s;
+        return -1;
     }
 
     private static int LocalNetSlot()

@@ -188,9 +188,9 @@ public class WorldMapView : MonoBehaviour
             new Color(0.3f, 0.4f, 0.6f),
             pixelScale);
 
-        // 操作説明(ロビー: 数字+Enter で参加、数字+移動で自分のカーソル、ノードに集合で出撃)
+        // 操作説明(ロビー: 矢印/WASDでカーソル移動、ゲームパッドAで追加参加・Bで取消、ノードに集合で出撃)
         controlHintTexture = PixelFontRenderer.RenderText(
-            "NUM+ENTER:JOIN  NUM+MOVE:CURSOR  GATHER:GO", new Color(0.5f, 0.6f, 0.7f), pixelScale - 1);
+            "MOVE:CURSOR  PAD A:JOIN  PAD B:LEAVE  GATHER:GO", new Color(0.5f, 0.6f, 0.7f), pixelScale - 1);
     }
 
     private void CreatePlayerCursorTextures()
@@ -831,7 +831,7 @@ public class WorldMapView : MonoBehaviour
         DrawPaths();
         DrawNodes();
         DrawGather();
-        DrawCorners();
+        // 四隅のコーナー装飾はギザギザして見えるため非表示
         DrawHeader();
         DrawHUD();
         DrawLobby();

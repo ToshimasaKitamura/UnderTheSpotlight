@@ -22,13 +22,13 @@ using UnityEngine.UI;
 /// </summary>
 public class PartSelectView : MonoBehaviour
 {
-    [Header("色")]
-    [Tooltip("ヒットボックス枠の色(通常時、塗りなし)。")]
-    public Color hitboxColor = new Color(0.98f, 0.15f, 0.15f, 1f);
-    [Tooltip("ヒットボックス枠の色(選択中)。")]
-    public Color hitboxSelectedColor = new Color(1f, 0.92f, 0.15f, 1f);
-    [Tooltip("プログレスバーの色(緑)。")]
-    public Color progressBarColor = new Color(0.4f, 0.95f, 0.45f, 1f);
+    [Header("色(テーマ: ステージパープル × スポットライトゴールド)")]
+    [Tooltip("ヒットボックス枠の色(通常時、塗りなし)。控えめな白紫。")]
+    public Color hitboxColor = new Color(0.85f, 0.82f, 0.95f, 0.6f);
+    [Tooltip("ヒットボックス枠の色(選択中)。スポットライトゴールド。")]
+    public Color hitboxSelectedColor = new Color(1f, 0.788f, 0.235f, 1f);
+    [Tooltip("プログレスバーの色。")]
+    public Color progressBarColor = new Color(1f, 0.788f, 0.235f, 1f);
 
     [Header("ヒットボックスの枠")]
     [Tooltip("枠線の太さ(敵スプライト短辺に対する比率)。0.02 でだいたい 2% 厚。")]
@@ -53,6 +53,12 @@ public class PartSelectView : MonoBehaviour
     private List<PartChipUi> chips = new List<PartChipUi>();
     private EnemyRuntimeState runtimeState;
     private Coroutine pulseRoutine;
+
+    // ポインタ(レティクル)方式: ボス上を自由に動かし、最も近い部位を選ぶ
+    private Transform reticle;
+    private Vector2 enemySpriteSize = Vector2.one;
+    private Vector2 pointerNorm = new Vector2(0.5f, 0.5f); // スプライト正規化座標(0..1)
+    private static Sprite _reticleSprite;
 
     // IMGUI用
     private PartSelectIMGUIHelper guiHelper;
@@ -82,8 +88,10 @@ public class PartSelectView : MonoBehaviour
         BuildHitboxesOnEnemy(enemyVisual);
         BuildChips();
         BuildTimer();
-        CursorIndex = 0;
-        ApplyHighlight();
+        // ポインタ(レティクル)初期位置 = 最初の部位の中心。以後プレイヤーが自由に動かす。
+        if (currentParts != null && currentParts.Count > 0)
+            pointerNorm = currentParts[0].hitboxCenter;
+        UpdatePointerSelection();
         pulseRoutine = StartCoroutine(PulseRoutine());
 
         // IMGUIヘルパー初期化
@@ -126,7 +134,7 @@ public class PartSelectView : MonoBehaviour
 
     public void Confirm()
     {
-        if (IsLocked || hitboxes.Count == 0) return;
+        if (IsLocked || hitboxes.Count == 0 || CursorIndex < 0) return;
         IsLocked = true;
         PartConfirmed?.Invoke(CursorIndex);
     }
@@ -162,6 +170,7 @@ public class PartSelectView : MonoBehaviour
             if (hitboxes[i].go != null) Destroy(hitboxes[i].go);
         }
         hitboxes.Clear();
+        if (reticle != null) { Destroy(reticle.gameObject); reticle = null; }
         chips.Clear();
         currentParts = null;
         if (overlayCanvas != null) { Destroy(overlayCanvas.gameObject); overlayCanvas = null; }
@@ -217,6 +226,7 @@ public class PartSelectView : MonoBehaviour
             baseSortingOrder = sr.sortingOrder;
         }
         hitboxParent = enemyVisual;
+        enemySpriteSize = spriteSize;
 
         var unitSquare = GetOrCreateUnitWhiteSquare();
         float borderT = Mathf.Min(spriteSize.x, spriteSize.y) * hitboxBorderRatio;
@@ -258,6 +268,108 @@ public class PartSelectView : MonoBehaviour
 
             hitboxes.Add(new HitboxUi { go = rootGo, edges = edges });
         }
+
+        // レティクル(自由移動カーソル)を敵スプライトの子に生成。部位より前面に出す。
+        CreateReticle(enemyVisual, sortingLayerID, baseSortingOrder + hitboxSortingOrderOffset + currentParts.Count * 4 + 10);
+    }
+
+    /// <summary>ボス上を自由に動く照準レティクルを生成する。</summary>
+    private void CreateReticle(Transform enemyVisual, int sortingLayerID, int sortingOrder)
+    {
+        var go = new GameObject("PartReticle", typeof(SpriteRenderer));
+        go.transform.SetParent(enemyVisual, false);
+        go.transform.localPosition = new Vector3(0f, 0f, -0.02f);
+        float size = Mathf.Min(enemySpriteSize.x, enemySpriteSize.y) * 0.32f;
+        go.transform.localScale = new Vector3(size, size, 1f);
+        var sr = go.GetComponent<SpriteRenderer>();
+        sr.sprite = GetReticleSprite();
+        sr.color = hitboxSelectedColor;
+        sr.sortingLayerID = sortingLayerID;
+        sr.sortingOrder = sortingOrder;
+        reticle = go.transform;
+    }
+
+    /// <summary>照準レティクルのスプライト(金のリング＋十字)を高解像度で生成(キャッシュ)。</summary>
+    private static Sprite GetReticleSprite()
+    {
+        if (_reticleSprite != null) return _reticleSprite;
+        int s = 128;
+        var tex = new Texture2D(s, s, TextureFormat.ARGB32, false);
+        tex.filterMode = FilterMode.Bilinear;
+        tex.wrapMode = TextureWrapMode.Clamp;
+        var px = new Color[s * s];
+        float c = (s - 1) / 2f;
+        float rOut = 56f, rIn = 42f;                 // リングの外/内半径
+        float feather = 2.0f;                        // エッジのアンチエイリアス幅
+        float crossHalf = 2.4f;                       // 十字の太さ(片側)
+        float crossMin = rIn - 16f, crossMax = rOut + 10f; // 十字の半径方向の範囲
+        for (int y = 0; y < s; y++)
+        {
+            for (int x = 0; x < s; x++)
+            {
+                float dx = x - c, dy = y - c;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+
+                // リング(帯の中央で1、両縁でフェザー)
+                float ringA = Mathf.Clamp01(Mathf.Min(rOut - d, d - rIn) / feather + 0.5f);
+
+                // 十字(縦棒/横棒。半径方向の範囲内のみ)
+                float crossA = 0f;
+                if (d >= crossMin && d <= crossMax)
+                {
+                    float vA = Mathf.Clamp01((crossHalf - Mathf.Abs(dx)) / feather + 0.5f);
+                    float hA = Mathf.Clamp01((crossHalf - Mathf.Abs(dy)) / feather + 0.5f);
+                    crossA = Mathf.Max(vA, hA);
+                }
+
+                float a = Mathf.Max(ringA, crossA);
+                px[y * s + x] = new Color(1f, 1f, 1f, a);
+            }
+        }
+        tex.SetPixels(px);
+        tex.Apply();
+        _reticleSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), s);
+        _reticleSprite.name = "PartReticle";
+        return _reticleSprite;
+    }
+
+    /// <summary>レティクルを正規化デルタ分だけ動かし、最も近い部位を選択状態にする。</summary>
+    public void MovePointer(Vector2 deltaNorm)
+    {
+        if (IsLocked) return;
+        pointerNorm.x = Mathf.Clamp01(pointerNorm.x + deltaNorm.x);
+        pointerNorm.y = Mathf.Clamp01(pointerNorm.y + deltaNorm.y);
+        UpdatePointerSelection();
+    }
+
+    /// <summary>レティクル位置を反映し、最も近い部位を CursorIndex にしてハイライト。</summary>
+    private void UpdatePointerSelection()
+    {
+        if (reticle != null)
+        {
+            reticle.localPosition = new Vector3(
+                (pointerNorm.x - 0.5f) * enemySpriteSize.x,
+                (pointerNorm.y - 0.5f) * enemySpriteSize.y,
+                -0.02f);
+        }
+        // レティクルに最も近い(または内包する)部位を選ぶ
+        int best = -1;
+        float bestD = float.MaxValue;
+        if (currentParts != null)
+        {
+            for (int i = 0; i < currentParts.Count; i++)
+            {
+                var p = currentParts[i];
+                if (p == null) continue;
+                // 内包なら距離0扱いで最優先
+                bool inside = Mathf.Abs(pointerNorm.x - p.hitboxCenter.x) <= p.hitboxSize.x * 0.5f
+                           && Mathf.Abs(pointerNorm.y - p.hitboxCenter.y) <= p.hitboxSize.y * 0.5f;
+                float d = inside ? 0f : (pointerNorm - p.hitboxCenter).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = i; }
+            }
+        }
+        CursorIndex = best;
+        ApplyHighlight();
     }
 
     private SpriteRenderer MakeEdge(Transform parent, string name,
@@ -307,7 +419,7 @@ public class PartSelectView : MonoBehaviour
 
             // チップテキスト設定
             chipTexts[i] = $"{part.displayName}  {hp}/{part.maxHp}";
-            chipColors[i] = Color.white;
+            chipColors[i] = GameColorScheme.TextOnDark;
             chipSelected[i] = false;
 
             var chipGo = new GameObject($"Chip_{part.id}",
@@ -320,11 +432,11 @@ public class PartSelectView : MonoBehaviour
             rt.anchoredPosition = new Vector2(startX + i * (chipW + gap), 130f);
             rt.sizeDelta = new Vector2(chipW, chipH);
             var img = chipGo.GetComponent<Image>();
-            img.color = new Color(0.12f, 0.13f, 0.18f, 0.95f);
+            img.color = new Color(GameColorScheme.Surface.r, GameColorScheme.Surface.g, GameColorScheme.Surface.b, 0.92f);
             img.raycastTarget = false;
             var ol = chipGo.AddComponent<Outline>();
-            ol.effectColor = new Color(0.95f, 0.15f, 0.15f, 1f);
-            ol.effectDistance = new Vector2(3f, -3f);
+            ol.effectColor = GameColorScheme.FrameOuter;
+            ol.effectDistance = new Vector2(2f, -2f);
 
             // テキストはIMGUIで描画するので、Unity UIのTextは作成しない
             chips.Add(new PartChipUi { go = chipGo, bg = img, outline = ol });
@@ -335,7 +447,8 @@ public class PartSelectView : MonoBehaviour
     {
         // タイマーテキストはIMGUIで描画
 
-        progressBarWidth = 1600f;
+        // 四隅の味方枠(画面両端)と重ならないよう、中央に収まる幅にする
+        progressBarWidth = 820f;
         var pbBg = new GameObject("ProgressBg",
             typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         pbBg.transform.SetParent(overlayCanvas.transform, false);
@@ -376,18 +489,19 @@ public class PartSelectView : MonoBehaviour
                     if (hb.edges[e] != null) hb.edges[e].color = c;
             }
         }
+        Color chipBgNormal = new Color(GameColorScheme.Surface.r, GameColorScheme.Surface.g, GameColorScheme.Surface.b, 0.92f);
+        Color chipBgSelected = Color.Lerp(GameColorScheme.Surface, GameColorScheme.Main, 0.4f);
+        chipBgSelected.a = 0.96f;
         for (int i = 0; i < chips.Count; i++)
         {
             bool sel = (i == CursorIndex);
             if (chips[i].bg != null)
-                chips[i].bg.color = sel
-                    ? new Color(hitboxSelectedColor.r * 0.7f, hitboxSelectedColor.g * 0.7f, hitboxSelectedColor.b * 0.3f, 1f)
-                    : new Color(0.12f, 0.13f, 0.18f, 0.95f);
+                chips[i].bg.color = sel ? chipBgSelected : chipBgNormal;
             if (chips[i].outline != null)
-                chips[i].outline.effectColor = sel ? hitboxSelectedColor : new Color(0.95f, 0.15f, 0.15f, 1f);
-            // チップの色・選択状態を更新
+                chips[i].outline.effectColor = sel ? GameColorScheme.Accent : GameColorScheme.FrameOuter;
+            // 選択中はゴールド文字でハイライト、通常は白
             if (chipColors != null && i < chipColors.Length)
-                chipColors[i] = sel ? Color.black : Color.white;
+                chipColors[i] = sel ? GameColorScheme.Accent : GameColorScheme.TextOnDark;
             if (chipSelected != null && i < chipSelected.Length)
                 chipSelected[i] = sel;
         }
@@ -472,8 +586,7 @@ public class PartSelectIMGUIHelper : MonoBehaviour
         view = v;
         pixelScale = Mathf.Max(3, Screen.height / 240);
 
-        // ヒントテキストは固定
-        hintTexture = PixelFontRenderer.RenderText("   Select / Enter", new Color(0.7f, 0.7f, 0.8f, 1f), pixelScale);
+        // 「Select / Enter」ヒントは廃止(最下部にはタイマーを表示する)
     }
 
     public void MarkDirty()
@@ -532,8 +645,9 @@ public class PartSelectIMGUIHelper : MonoBehaviour
             }
             if (timerTexture != null)
             {
-                float x = Screen.width - 60f - timerTexture.width;
-                float y = Screen.height - 230f - timerTexture.height;
+                // 最下部中央(旧「Select / Enter」の位置)に秒数カウンターを出す
+                float x = centerX - timerTexture.width / 2f;
+                float y = Screen.height - 24f - timerTexture.height;
                 GUI.DrawTexture(new Rect(x, y, timerTexture.width, timerTexture.height), timerTexture);
             }
         }
@@ -574,14 +688,6 @@ public class PartSelectIMGUIHelper : MonoBehaviour
                     GUI.DrawTexture(new Rect(x, y, chipTextures[i].width, chipTextures[i].height), chipTextures[i]);
                 }
             }
-        }
-
-        // ヒント描画
-        if (hintTexture != null)
-        {
-            float x = centerX - hintTexture.width / 2f;
-            float y = Screen.height - 24f - hintTexture.height;
-            GUI.DrawTexture(new Rect(x, y, hintTexture.width, hintTexture.height), hintTexture);
         }
 
         isDirty = false;

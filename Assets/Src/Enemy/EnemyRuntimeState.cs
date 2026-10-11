@@ -78,6 +78,36 @@ public class EnemyRuntimeState : MonoBehaviour
     public int GetCurrentHp(string partId) => currentHp.TryGetValue(partId, out int h) ? h : 0;
     public bool IsDestroyed(string partId) => destroyed.Contains(partId);
 
+    /// <summary>
+    /// 回復弾(BulletKind.Heal)命中時のボス自己回復。
+    /// 破壊されておらず、かつ最大HP未満の部位を1つ探して回復する。
+    /// 回復できる部位が無ければ false(=全快 or 全破壊)。
+    /// </summary>
+    public bool HealAny(int amount)
+    {
+        if (amount <= 0) return false;
+        if (enemyData == null || enemyData.parts == null) return false;
+        // 部位破壊で自己回復が封じられている場合は回復しない(回復弾が無効化される)。
+        if (HasActiveEffect(PartDestructionEffect.PreventHeal))
+        {
+            Debug.Log("[EnemyRuntimeState] PreventHeal 発動中のため回復弾を無効化。");
+            return false;
+        }
+        foreach (var p in enemyData.parts)
+        {
+            if (p == null || string.IsNullOrEmpty(p.id)) continue;
+            if (destroyed.Contains(p.id)) continue;
+            int hp = currentHp.TryGetValue(p.id, out int h) ? h : p.maxHp;
+            if (hp >= p.maxHp) continue;
+            hp = Mathf.Min(p.maxHp, hp + amount);
+            currentHp[p.id] = hp;
+            OnPartHpChanged?.Invoke(p, hp);
+            Debug.Log($"[EnemyRuntimeState] 回復弾でボス回復: {p.displayName} ({p.id}) → HP {hp}/{p.maxHp}");
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>いずれかの破壊済み部位が指定 effect を持っているか。BossDanmakuPattern などが参照。</summary>
     public bool HasActiveEffect(PartDestructionEffect effect)
     {

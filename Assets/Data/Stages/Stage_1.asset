@@ -15,7 +15,7 @@ MonoBehaviour:
   id: stage_1
   displayName: 森の入口
   bosses:
-  - {fileID: 11400000, guid: a1b2c3d4e5f6708192a3b4c5d6e7f809, type: 2}
+  - {fileID: 11400000, guid: 29a389b16c3b4d3c9ec9e70eb1d3c494, type: 2}
   baseExpReward: 5
   baseBombReward: 1
   clearBonusExp: 10

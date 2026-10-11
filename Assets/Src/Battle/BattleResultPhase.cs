@@ -215,6 +215,14 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
                 {
                     enemyState.enemyData = run.CurrentBoss;
                     enemyState.ResetAll();
+
+                    // 連戦: 中央の常駐ボスの見た目も次のボスのスプライトへ更新
+                    var boss = FindObjectOfType<EnemyOnFieldController>();
+                    if (boss != null && !string.IsNullOrEmpty(run.CurrentBoss.bossSpriteName))
+                    {
+                        var sprite = BossSpriteResolver.Load(run.CurrentBoss.bossSpriteName);
+                        if (sprite != null) boss.SetUpSprite(sprite);
+                    }
                 }
             }
         }

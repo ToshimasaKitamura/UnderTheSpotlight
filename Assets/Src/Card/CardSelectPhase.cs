@@ -73,14 +73,14 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     // 非手番キャラの暗転倍率(0=黒,1=元色)。キャラは消さず暗めにして手番を強調
     private float dimMultiplier = 0.5f;
 
-    // カード列の中心の画面横位置
-    private float cardsCenterX = 0.66f;
-    // カード列の画面縦位置
-    private float cardsCenterY = 0.37f;
+    // カード列の中心の画面横位置(0.5=中央 → 3枚の2枚目がちょうど画面中央に来る)
+    private float cardsCenterX = 0.5f;
+    // カード列の画面縦位置(0.5=画面中央)
+    private float cardsCenterY = 0.5f;
     // カード間の画面横間隔(ビューポート比)。カード幅より小さいと重なる
-    private float cardSpacingViewport = 0.22f;
-    // カード高さの画面縦比率
-    private float cardHeightViewport = 0.5f;
+    private float cardSpacingViewport = 0.23f;
+    // カード高さの画面縦比率(大きめ)
+    private float cardHeightViewport = 0.44f;
 
     // カーソル移動速度(ビューポート/秒)
     private float cursorSpeed = 0.7f;
@@ -120,6 +120,16 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     // 舞台演出(カメラズーム/キャラ強調)
     private CardSelectStage stage;
 
+    // 部位選択(カード確定直後に、そのプレイヤーがボスの部位を選ぶ = 新フロー)
+    private EnemyRuntimeState enemyState;
+    private PartSelectPhase partSelectPhase;
+    private string[] partTargets;
+
+    // カード選択中にボスを暗くする用(部位選択で元に戻す)
+    private SpriteRenderer[] bossSrs;
+    private Color[] bossBaseColors;
+    private const float BossDimMul = 0.32f;
+
     // 4Pカーソル(マウスポインタ) — Screen Space Overlay の UI として描画し、
     // ゲームカメラのズーム・画面遷移の影響を受けないようにする。残像(フェード)付き。
     private GameObject cursorCanvasObj;      // オーバーレイCanvas
@@ -156,8 +166,9 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
     private void ApplyTuning()
     {
+        // 人数は tuning 未割り当てでも必ず反映する(選択パーティがあれば参加人数、無ければ tuning/既定)
+        playerCount = BattleParty.Count(tuning);
         if (tuning == null) return;
-        playerCount = tuning.playerCount;
         selectTimeLimit = tuning.selectTimeLimit;
         randomizeTurnOrder = tuning.randomizeTurnOrder;
         var cols = tuning.ResolvePlayerColors();
@@ -210,6 +221,13 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         turnOrder = BuildTurnOrder(n);
         turnIndex = 0;
 
+        // 部位選択(カード確定直後にインラインで実施)の準備
+        partTargets = new string[n];
+        if (enemyState == null) enemyState = FindObjectOfType<EnemyRuntimeState>();
+        if (partSelectPhase == null) partSelectPhase = FindObjectOfType<PartSelectPhase>();
+        // 今ターンの敵予告部位を1つ選ぶ(旧 PartSelectPhase.Enter で行っていた処理を引き継ぐ)
+        if (enemyState != null) enemyState.PickNextTelegraph(null);
+
         UnityEngine.Debug.Log($"[CardSelectPhase] ターン順序: {string.Join(",", turnOrder)}");
 
         // フェーズコルーチンを開始
@@ -221,6 +239,9 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         enabled = false;
         turnActive = false;
         isAnimating = false;
+
+        // フェーズ中断時にボスが暗いまま残らないように戻す
+        RestoreBoss();
 
         if (phaseCoroutine != null)
         {
@@ -258,23 +279,33 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         // カード選択フェーズ開始時に元の位置・表示状態を保存
         SaveOriginalCharacterPositions();
 
+        // 前フェーズで分解(描画OFF)されたキャラの SpriteRenderer を戻す(このフェーズは全員から始める)
+        if (playerTransforms != null)
+            foreach (var pt in playerTransforms)
+                if (pt != null)
+                    foreach (var s in pt.GetComponentsInChildren<SpriteRenderer>(true))
+                        if (s != null) s.enabled = true;
+
         // 舞台演出(カメラズーム/キャラ強調)を準備
         SetupStage();
 
         // 4P分のカーソル(マジシャンアイコン)を生成
         CreateCursors();
 
-        // カード選択中は味方フレームを隠し、キャラ本人のみを見せる
-        frameUI.HideAllyFramesOnly();
+        // 【仕様】カード選択でも枠は消さない(手番プレイヤーだけ全体像、他は窓のまま)。
 
         // 各プレイヤーのターンを処理
         for (turnIndex = 0; turnIndex < turnOrder.Length; turnIndex++)
         {
             activePlayer = turnOrder[turnIndex];
 
-            // キャラは消さず全員表示のまま、カメラを手番キャラへズームイン
-            // (手番キャラは画面左に大きく寄り、他キャラは暗転で強調される)
-            yield return stage.FocusPlayer(activePlayer);
+            // ズームせず全体表示のまま。カード選択中はボスを暗くする(部位選択で元に戻す)。
+            DarkenBoss();
+
+            // 他プレイヤーは窓(上半身)のまま。手番プレイヤーは「顔だけ→ぴょこっとジャンプ」で全体像に。
+            for (int p = 0; p < playerCount; p++)
+                if (p != activePlayer) ShowPlayerWindow(p);
+            yield return StartCoroutine(ShowPlayerFullAnimated(activePlayer));
 
             // カードをドロー
             var deck = partyDeck.GetDeck(activePlayer);
@@ -332,12 +363,27 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             // カード退場(キャラの拡大リアクションは行わない)
             yield return StartCoroutine(AnimateCardsExit(selectedCardIndex));
 
-            // カードを消す(キャラは消さない。次の手番でカメラが移動して強調が切り替わる)
+            // カードを消す(キャラは消さない)
             DestroyAllCards();
+
+            // カード確定演出: 手番プレイヤーのキャラ画像を分解して弾けさせる
+            yield return StartCoroutine(ExplodeCharacter(activePlayer));
+
+            // 手番終了: 手番プレイヤーを窓(上半身)に戻す(分解済みなので非表示のまま)
+            ShowPlayerWindow(activePlayer);
+
+            // 部位選択に入るのでボスを元の色に戻す
+            RestoreBoss();
+
+            // このプレイヤーの部位選択(ボスに部位マーカーを出して狙う)
+            yield return StartCoroutine(PartSelectInline(activePlayer));
         }
 
         // カーソルはフェーズ終了(Exit)まで残す。どの画面状態でも常に動かせるようにするため、
         // 最終演出(下からカード)中も表示・操作可能にしておく。
+
+        // 念のためボスを元の色へ(全員終了時点で暗転が残らないように)
+        RestoreBoss();
 
         // カメラを元に戻す。この後カードが下から出るので、キャラは画面に残さず全員非表示にする
         // (ShowSelectedCardsFromBottom の最後で RestoreAllPlayersVisibility により復帰する)
@@ -367,6 +413,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         // 暗幕/スポットライトは使わず、ズームとキャラ強調のみ行う
         stage.disableSpotlight = true;
 
+        // ※ 枠は消さず、キャラは窓のまま。手番プレイヤーだけ全体像にする処理は手番ごとに行う。
         stage.Initialize(playerTransforms);
     }
 
@@ -464,7 +511,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         if (dir != Vector2.zero)
         {
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < playerCount; i++)
             {
                 bool move = anyHeld ? holdP[i] : (i == activePlayer);
                 if (!move) continue;
@@ -553,7 +600,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         cursorGhosts = new Image[4][];
         cursorHistory = new Vector2[4][];
 
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < playerCount; i++)
         {
             // 初期位置は画面右下に横一列で整列
             Vector2 start = new Vector2(0.78f + i * 0.055f, 0.10f);
@@ -1071,116 +1118,30 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         // スケールは呼び出し側でカメラ倍率に応じて設定する（ここでは等倍）
         cardObj.transform.localScale = Vector3.one;
 
-        // カード背景画像をResourcesから読み込み
-        string spritePath = GetCardSpritePath(card.Data.category, card.Data.tier);
-        Sprite cardSprite = Resources.Load<Sprite>(spritePath);
+        // 洗練されたTCGスタイルのカードSpriteを取得
+        Sprite cardSprite = CardVisualGenerator.GetCardSprite(card);
 
         // カード本体（スプライト画像）
         var bgSr = cardObj.AddComponent<SpriteRenderer>();
-        if (cardSprite != null)
-        {
-            bgSr.sprite = cardSprite;
-        }
-        else
-        {
-            // フォールバック：スプライトがない場合は単色の角丸四角形
-            bgSr.sprite = CreateFallbackCardSprite();
-            bgSr.color = GetCardColor(card.Data.category);
-        }
+        bgSr.sprite = cardSprite;
         bgSr.sortingOrder = 100;
 
-        // グロー効果（選択時に使用）
+        // グロー効果（ホバー・選択時に使用）
         GameObject glowObj = new GameObject("Glow");
         glowObj.transform.SetParent(cardObj.transform);
         glowObj.transform.localPosition = Vector3.zero;
         var glowSr = glowObj.AddComponent<SpriteRenderer>();
-        if (cardSprite != null)
-        {
-            glowSr.sprite = cardSprite;
-        }
-        else
-        {
-            glowSr.sprite = CreateFallbackCardSprite();
-        }
-        Color glowColor = GetCardColor(card.Data.category);
+        glowSr.sprite = cardSprite;
+        Color glowColor = CardVisualGenerator.GetCategoryColor(card.Data.category);
         // 最初はグロー(外枠)を消した状態で配る。ホバー時のみ点灯する。
         glowSr.color = new Color(glowColor.r, glowColor.g, glowColor.b, 0f);
         glowSr.sortingOrder = 98;
-        glowObj.transform.localScale = Vector3.one * 1.1f;
-
-        // カードのアスペクト比: 367x556 ≒ 0.66
-        // 下部約25%がテキストエリア（中央から上はイラストゾーン）
-        // PPU=100で、カード高さ556px → 5.56ユニット、中心から下端まで2.78ユニット
-        // テキストエリアは下部25%付近
-
-        // カード名テキスト（テキストエリア上部）
-        GameObject nameObj = new GameObject("CardName");
-        nameObj.transform.SetParent(cardObj.transform);
-        nameObj.transform.localPosition = new Vector3(0f, -1.1f, 0f);
-
-        var nameMesh = nameObj.AddComponent<TextMesh>();
-        nameMesh.text = card.Data.displayName;
-        nameMesh.fontSize = 42;
-        nameMesh.characterSize = 0.082f;
-        nameMesh.anchor = TextAnchor.MiddleCenter;
-        nameMesh.alignment = TextAlignment.Center;
-        nameMesh.color = new Color(0.15f, 0.1f, 0.05f, 1f);  // 暗い茶色
-        nameMesh.fontStyle = FontStyle.Bold;
-
-        var nameRenderer = nameObj.GetComponent<MeshRenderer>();
-        nameRenderer.sortingOrder = 104;
-        ApplyCardFont(nameMesh);
-
-        // 効果説明テキスト（テキストエリア下部）
-        GameObject descObj = new GameObject("CardDescription");
-        descObj.transform.SetParent(cardObj.transform);
-        descObj.transform.localPosition = new Vector3(0f, -1.75f, 0f);
-
-        var descMesh = descObj.AddComponent<TextMesh>();
-        // 説明文が長い場合は改行（1行あたり12文字まで）
-        string desc = card.Data.description ?? "";
-        desc = WrapText(desc, 12);
-        descMesh.text = desc;
-        descMesh.fontSize = 28;
-        descMesh.characterSize = 0.063f;
-        descMesh.anchor = TextAnchor.MiddleCenter;
-        descMesh.alignment = TextAlignment.Center;
-        descMesh.color = new Color(0.25f, 0.2f, 0.15f, 1f);  // 少し明るい茶色
-        descMesh.fontStyle = FontStyle.Normal;
-
-        var descRenderer = descObj.GetComponent<MeshRenderer>();
-        descRenderer.sortingOrder = 104;
-        ApplyCardFont(descMesh);
-
-        // 威力表示（テキストエリア右下）
-        GameObject powerObj = new GameObject("Power");
-        powerObj.transform.SetParent(cardObj.transform);
-        powerObj.transform.localPosition = new Vector3(1.2f, -2.5f, 0f);
-
-        var powerMesh = powerObj.AddComponent<TextMesh>();
-        powerMesh.text = $"{card.EffectivePower}";
-        powerMesh.fontSize = 36;
-        powerMesh.characterSize = 0.075f;
-        powerMesh.anchor = TextAnchor.MiddleCenter;
-        powerMesh.alignment = TextAlignment.Center;
-        powerMesh.color = new Color(0.3f, 0.2f, 0.1f, 1f);
-        powerMesh.fontStyle = FontStyle.Bold;
-
-        var powerRenderer = powerObj.GetComponent<MeshRenderer>();
-        powerRenderer.sortingOrder = 104;
-        ApplyCardFont(powerMesh);
-
-        // カードレベル表示（左上に丸数字①②…で表現）
-        CreateLevelBadge(cardObj, card.UpgradeLevel + 1);
+        glowObj.transform.localScale = Vector3.one * 1.08f;
 
         // カード裏面（配布時は裏、スロット到達でめくって表にする）
         // ※ 最後の子として追加する。表を隠すため最前面。SpriteRenderer列の末尾になるよう最後に生成。
-        Sprite backSprite = Resources.Load<Sprite>("Cards/Card_Back");
-        if (backSprite == null)
-        {
-            UnityEngine.Debug.LogWarning("[CardSelectPhase] カード裏面 Cards/Card_Back が見つかりません。裏面演出をスキップします。");
-        }
-        else
+        Sprite backSprite = CardVisualGenerator.GetCardBackSprite();
+        if (backSprite != null)
         {
             GameObject backObj = new GameObject("Back");
             backObj.transform.SetParent(cardObj.transform);
@@ -1188,9 +1149,8 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
             var backSr = backObj.AddComponent<SpriteRenderer>();
             backSr.sprite = backSprite;
-            backSr.sortingOrder = 110;  // 表(bg=100,text=104)より前面で覆う
+            backSr.sortingOrder = 110;  // 表(bg=100)より前面で覆う
 
-            // 表の背景と同じ見た目サイズに合わせる
             Vector3 frontSize = bgSr.sprite != null ? bgSr.sprite.bounds.size : Vector3.one;
             Vector3 backSize = backSprite.bounds.size;
             backObj.transform.localScale = new Vector3(
@@ -1401,13 +1361,313 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         return playerTransforms[playerIndex];
     }
 
+    /// <summary>
+    /// カード確定直後の部位選択(新フロー)。そのプレイヤーがボスの生存部位を1つ狙う。
+    /// 結果は <see cref="partTargets"/>[player] に格納し、最後に PartSelectPhase へ流し込む。
+    /// </summary>
+    private IEnumerator PartSelectInline(int player)
+    {
+        // 生存している部位を候補にする
+        var parts = new List<EnemyPart>();
+        if (enemyState != null && enemyState.enemyData != null && enemyState.enemyData.parts != null)
+        {
+            foreach (var p in enemyState.enemyData.parts)
+                if (p != null && !enemyState.IsDestroyed(p.id)) parts.Add(p);
+        }
+
+        // 候補0=スキップ / 候補1=自動確定(UIは出さない)
+        if (parts.Count == 0) { partTargets[player] = null; yield break; }
+        if (parts.Count == 1) { partTargets[player] = parts[0].id; yield break; }
+
+        // ボスを画面に収める(カメラを全体へ戻す。キャラ強調は維持)
+        if (stage != null) yield return StartCoroutine(stage.MoveCameraHome(0.35f));
+
+        // カード用の4Pカーソルは部位選択中は隠す
+        if (cursorCanvasObj != null) cursorCanvasObj.SetActive(false);
+
+        var go = new GameObject("InlinePartSelectView");
+        var view = go.AddComponent<PartSelectView>();
+        int chosen = -1;
+        System.Action<int> onConfirm = idx => chosen = idx;
+        view.PartConfirmed += onConfirm;
+        view.Build(parts, enemyState, ResolveEnemyVisual());
+
+        Color col = (GameColorScheme.Players != null && player < GameColorScheme.Players.Length)
+            ? GameColorScheme.Players[player] : Color.white;
+        view.SetHeader($"{player + 1}P: どこを狙う?", col);
+        view.SetTimeLimit(selectTimeLimit);
+
+        // アクティブプレイヤーがレティクル(照準)で狙う。
+        // スティック / WASD / 矢印で自由移動、重なった(最も近い)部位がハイライト、Enter系/Aボタンで確定。
+        const float pointerSpeed = 1.1f; // 正規化座標/秒(画面全体を約1秒弱で横断)
+        while (chosen < 0)
+        {
+            view.Tick(Time.deltaTime);
+            if (!view.IsLocked)
+            {
+                var kb = Keyboard.current;
+                var gp = Gamepad.current;
+                Vector2 move = Vector2.zero;
+                if (kb != null)
+                {
+                    if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) move.x -= 1f;
+                    if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) move.x += 1f;
+                    if (kb.upArrowKey.isPressed || kb.wKey.isPressed) move.y += 1f;
+                    if (kb.downArrowKey.isPressed || kb.sKey.isPressed) move.y -= 1f;
+                }
+                if (gp != null) move += gp.leftStick.ReadValue();
+                if (move.sqrMagnitude > 1f) move = move.normalized;
+                if (move != Vector2.zero) view.MovePointer(move * pointerSpeed * Time.deltaTime);
+
+                bool confirm =
+                    (kb != null && (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame
+                        || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame))
+                    || (gp != null && (gp.buttonSouth.wasPressedThisFrame || gp.buttonEast.wasPressedThisFrame));
+                if (confirm) view.Confirm();
+            }
+            yield return null;
+        }
+
+        view.PartConfirmed -= onConfirm;
+        if (chosen >= 0 && chosen < parts.Count) partTargets[player] = parts[chosen].id;
+        view.Clear();   // 敵に貼った部位マーカー(enemyVisual の子)を明示的に破棄(GO 破棄では消えないため)
+        Destroy(go);
+
+        if (cursorCanvasObj != null) cursorCanvasObj.SetActive(true);
+    }
+
+    /// <summary>
+    /// 手番プレイヤーを「顔だけ(窓)→ ぴょこっとジャンプ → 全体像」で見せる。
+    /// クリップ解除して全身を出し、上へ跳ねてから枠中心・枠フィットへ着地(軽くオーバーシュート)。
+    /// </summary>
+    private IEnumerator ShowPlayerFullAnimated(int p)
+    {
+        if (frameUI == null || playerTransforms == null || p < 0 || p >= playerTransforms.Length) yield break;
+        var t = playerTransforms[p];
+        if (t == null) yield break;
+
+        Vector3 startPos = t.position;
+        Vector3 startScale = t.localScale;
+
+        Vector3 endPos = frameUI.GetAllyFrameCenter(p);
+        Vector3 endScale = startScale;
+        var sr = t.GetComponentInChildren<SpriteRenderer>();
+        if (sr != null && sr.sprite != null)
+        {
+            float sc = frameUI.CalculateAllyScale(sr.sprite, p);
+            endScale = new Vector3(sc, sc, 1f);
+        }
+
+        // クリップ解除して全身を見せる(ジャンプで飛び出す)
+        frameUI.SetPlayerWindowClip(p, false);
+
+        const float dur = 0.34f;
+        const float jumpH = 0.8f; // 上へ跳ねる高さ(ワールド)
+        float el = 0f;
+        while (el < dur)
+        {
+            el += Time.deltaTime;
+            float k = Mathf.Clamp01(el / dur);
+            Vector3 pos = Vector3.Lerp(startPos, endPos, 1f - (1f - k) * (1f - k)); // EaseOutQuad
+            pos.y += Mathf.Sin(k * Mathf.PI) * jumpH;                                 // ぴょこっと山なり
+            t.position = pos;
+            t.localScale = Vector3.LerpUnclamped(startScale, endScale, EaseOutBack(k)); // 軽いオーバーシュート
+            yield return null;
+        }
+        t.position = endPos;
+        t.localScale = endScale;
+    }
+
+    /// <summary>
+    /// カード確定演出: 手番プレイヤーのキャラ画像を格子状の破片に分解して弾けさせる。
+    /// スプライトのサブ矩形で破片を作り、外向き＋上向きに飛ばして重力・回転・フェード。
+    /// 破片が消えたら元キャラは非表示のまま(次フェーズ開始時に戻す)。
+    /// </summary>
+    private IEnumerator ExplodeCharacter(int p)
+    {
+        if (playerTransforms == null || p < 0 || p >= playerTransforms.Length) yield break;
+        var t = playerTransforms[p];
+        if (t == null) yield break;
+        var sr = t.GetComponentInChildren<SpriteRenderer>();
+        if (sr == null || sr.sprite == null || sr.sprite.texture == null) yield break;
+
+        var sprite = sr.sprite;
+        Texture2D tex = sprite.texture;
+        Rect trect = sprite.textureRect;
+        float ppu = sprite.pixelsPerUnit;
+        Bounds bounds = sr.bounds;
+        Vector3 charScale = sr.transform.lossyScale;
+        Color baseCol = sr.color;
+        int sortLayer = sr.sortingLayerID;
+        int sortOrder = sr.sortingOrder + 2;
+
+        // 元キャラを隠す(破片で置き換わる)
+        foreach (var s in t.GetComponentsInChildren<SpriteRenderer>(true))
+            if (s != null) s.enabled = false;
+
+        const int cols = 6, rows = 8;
+        int n = cols * rows;
+        var go = new GameObject[n];
+        var sp = new Sprite[n];
+        var fsr = new SpriteRenderer[n];
+        var vel = new Vector3[n];
+        var angVel = new float[n];
+
+        Vector3 center = bounds.center;
+        float cellPxW = trect.width / cols, cellPxH = trect.height / rows;
+        float cellWW = bounds.size.x / cols, cellWH = bounds.size.y / rows;
+
+        int idx = 0;
+        for (int cy = 0; cy < rows; cy++)
+        {
+            for (int cx = 0; cx < cols; cx++, idx++)
+            {
+                Rect cell = new Rect(trect.x + cx * cellPxW, trect.y + cy * cellPxH, cellPxW, cellPxH);
+                sp[idx] = Sprite.Create(tex, cell, new Vector2(0.5f, 0.5f), ppu);
+
+                var g = new GameObject("CharFrag");
+                go[idx] = g;
+                var r = g.AddComponent<SpriteRenderer>();
+                fsr[idx] = r;
+                r.sprite = sp[idx];
+                r.color = baseCol;
+                r.sortingLayerID = sortLayer;
+                r.sortingOrder = sortOrder;
+
+                Vector3 cellCenter = new Vector3(
+                    bounds.min.x + (cx + 0.5f) * cellWW,
+                    bounds.min.y + (cy + 0.5f) * cellWH, 0f);
+                g.transform.position = cellCenter;
+                g.transform.localScale = charScale;
+
+                Vector3 dir = cellCenter - center; dir.z = 0f;
+                if (dir.sqrMagnitude < 0.0001f)
+                    dir = new Vector3(UnityEngine.Random.Range(-1f, 1f), UnityEngine.Random.Range(-1f, 1f), 0f);
+                dir = dir.normalized;
+                float speed = UnityEngine.Random.Range(18f, 34f);   // すごいスピードで散る
+                vel[idx] = dir * speed + Vector3.up * UnityEngine.Random.Range(6f, 14f);
+                angVel[idx] = UnityEngine.Random.Range(-1080f, 1080f);
+            }
+        }
+
+        const float dur = 0.45f;   // 短く一気に弾けて待機へ戻る
+        const float grav = -24f;
+        float el = 0f;
+        while (el < dur)
+        {
+            float dt = Time.deltaTime;
+            el += dt;
+            float alpha = 1f - Mathf.Clamp01(el / dur); alpha *= alpha; // 後半で速くフェード
+            for (int i = 0; i < n; i++)
+            {
+                if (go[i] == null) continue;
+                vel[i].y += grav * dt;
+                go[i].transform.position += vel[i] * dt;
+                go[i].transform.Rotate(0f, 0f, angVel[i] * dt);
+                Color c = baseCol; c.a = baseCol.a * alpha;
+                fsr[i].color = c;
+            }
+            yield return null;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            if (go[i] != null) Destroy(go[i]);
+            if (sp[i] != null) Destroy(sp[i]);
+        }
+    }
+
+    /// <summary>
+    /// プレイヤーを「窓(上半身)の待機」に戻す: 描画を再表示＋ポートレート配置＋窓クリップ＋浮遊(待機)の基準更新。
+    /// 分解(爆発)で消えたキャラも、これで元の待機モーションへ戻る。
+    /// </summary>
+    private void ShowPlayerWindow(int p)
+    {
+        if (frameUI == null || playerTransforms == null || p < 0 || p >= playerTransforms.Length) return;
+        var t = playerTransforms[p];
+        if (t == null) return;
+
+        // 分解で消していた描画を戻す(待機に戻る)
+        foreach (var s in t.GetComponentsInChildren<SpriteRenderer>(true))
+            if (s != null) s.enabled = true;
+
+        var sr = t.GetComponentInChildren<SpriteRenderer>();
+        if (sr != null && sr.sprite != null)
+        {
+            frameUI.GetAllyPortraitPlacement(p, sr.sprite, out Vector3 pos, out float scale);
+            t.position = pos;
+            t.localScale = new Vector3(scale, scale, 1f);
+        }
+        frameUI.SetPlayerWindowClip(p, true);
+
+        // 浮遊(待機モーション)を新しい窓位置基準に合わせる
+        var fm = t.GetComponent<UnderTheSpotlight.FloatingCharacterMotion>();
+        if (fm != null) fm.RebaseToCurrentPosition();
+    }
+
+    private void EnsureBossRenderers()
+    {
+        if (bossSrs != null) return;
+        GameObject e = GameObject.Find("Enemy");
+        if (e == null)
+        {
+            var eoc = FindObjectOfType<EnemyOnFieldController>();
+            if (eoc != null) e = eoc.gameObject;
+        }
+        if (e == null) return;
+        bossSrs = e.GetComponentsInChildren<SpriteRenderer>(true);
+        bossBaseColors = new Color[bossSrs.Length];
+        for (int i = 0; i < bossSrs.Length; i++)
+            bossBaseColors[i] = (bossSrs[i] != null) ? bossSrs[i].color : Color.white;
+    }
+
+    /// <summary>カード選択中: ボスを暗くする。</summary>
+    private void DarkenBoss()
+    {
+        EnsureBossRenderers();
+        if (bossSrs == null) return;
+        for (int i = 0; i < bossSrs.Length; i++)
+        {
+            if (bossSrs[i] == null) continue;
+            Color b = bossBaseColors[i];
+            bossSrs[i].color = new Color(b.r * BossDimMul, b.g * BossDimMul, b.b * BossDimMul, b.a);
+        }
+    }
+
+    /// <summary>部位選択/終了時: ボスを元の色に戻す。</summary>
+    private void RestoreBoss()
+    {
+        if (bossSrs == null) return;
+        for (int i = 0; i < bossSrs.Length; i++)
+            if (bossSrs[i] != null) bossSrs[i].color = bossBaseColors[i];
+    }
+
+    /// <summary>シーン上の Enemy の Visual(SpriteRenderer 子)を返す。無ければ Enemy ルート。</summary>
+    private Transform ResolveEnemyVisual()
+    {
+        GameObject e = GameObject.Find("Enemy");
+        if (e == null)
+        {
+            var eoc = FindObjectOfType<EnemyOnFieldController>();
+            if (eoc != null) e = eoc.gameObject;
+        }
+        if (e == null) return null;
+        var v = e.transform.Find("Visual");
+        return v != null ? v : e.transform;
+    }
+
     private void FinishSelection()
     {
-        UnityEngine.Debug.Log("[CardSelectPhase] 全員選択完了 → PartSelect へ");
+        UnityEngine.Debug.Log("[CardSelectPhase] 全員選択完了(カード+部位) → ActionCommand へ");
         AllSelected?.Invoke(selections);
+
+        // 部位選択結果をミニゲームへ引き継ぐ(PartSelect フェーズは新フローでスキップ)
+        if (partSelectPhase != null && partTargets != null)
+            partSelectPhase.SetTargetPartIds(partTargets);
+
         if (stateMachine != null)
         {
-            stateMachine.ChangeState(BattleStateMachine.State.PartSelect);
+            stateMachine.ChangeState(BattleStateMachine.State.ActionCommand);
         }
     }
 
@@ -1484,7 +1744,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         float staggerDelay = 0.15f;
         float animDuration = 0.4f;
 
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < playerCount; i++)
         {
             if (selections[i] == null) continue;
 
@@ -1505,7 +1765,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
         // 合計レベルを計算
         int totalLevel = 0;
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < playerCount; i++)
         {
             if (selections[i] != null)
             {
@@ -1533,7 +1793,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             var kb = Keyboard.current;
             if (kb != null && ConfirmPressed(kb))
             {
-                for (int p = 0; p < 4; p++)
+                for (int p = 0; p < playerCount; p++)
                 {
                     if (playerReady[p]) continue;
                     if (IsCursorOnReadyButton(p))
@@ -1813,25 +2073,12 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         readyUI.transform.position = centerPos;
 
         float circleSpacing = 1.5f;
-        float startX = -circleSpacing * 1.5f;
+        // 参加人数ぶんの円を中央寄せで並べる(4人未満でも中央に揃う)
+        float startX = -circleSpacing * (playerCount - 1) / 2f;
 
         readyButtonWorldPos = new Vector3[4];
 
-        // 操作ヒント
-        GameObject hintObj = new GameObject("ReadyHint");
-        hintObj.transform.SetParent(readyUI.transform);
-        hintObj.transform.localPosition = new Vector3(0f, 1.1f, 0f);
-        var hintMesh = hintObj.AddComponent<TextMesh>();
-        hintMesh.text = "カーソルを重ねて決定キーで準備完了";
-        hintMesh.fontSize = 28;
-        hintMesh.characterSize = 0.07f;
-        hintMesh.anchor = TextAnchor.MiddleCenter;
-        hintMesh.alignment = TextAlignment.Center;
-        hintMesh.color = Color.white;
-        hintMesh.fontStyle = FontStyle.Bold;
-        hintObj.GetComponent<MeshRenderer>().sortingOrder = 306;
-
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < playerCount; i++)
         {
             readyButtonWorldPos[i] = centerPos + new Vector3(startX + i * circleSpacing, 0f, 0f);
 
@@ -1922,7 +2169,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     /// </summary>
     private bool AllPlayersReady(bool[] playerReady)
     {
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < playerCount; i++)
         {
             if (!playerReady[i]) return false;
         }
@@ -1957,7 +2204,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         if (readyUI == null) return;
         float k = 1f - Mathf.Exp(-12f * Time.deltaTime);
 
-        for (int p = 0; p < 4; p++)
+        for (int p = 0; p < playerCount; p++)
         {
             if (playerReady[p]) continue;   // Ready済みは FillPlayerCircle 側の演出に任せる
             Transform circle = readyUI.transform.Find($"Circle_P{p + 1}");
@@ -2096,52 +2343,22 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         GameObject cardObj = new GameObject($"SelectedCard_P{playerIndex + 1}_{card.Data.displayName}");
         cardObj.transform.position = position;
 
-        // カードサイズをカード選択時と同じにする（0.17f）
-        float scale = Mathf.Min(frameSize.x, frameSize.y) * 0.17f;
+        // 選択後の待機時カードサイズ（四隅に並ぶ）。小さすぎたので拡大。
+        float scale = Mathf.Min(frameSize.x, frameSize.y) * 0.22f;
         cardObj.transform.localScale = Vector3.one * scale;
 
-        // カード背景画像をResourcesから読み込み
-        string spritePath = GetCardSpritePath(card.Data.category, card.Data.tier);
-        Sprite cardSprite = Resources.Load<Sprite>(spritePath);
+        // 洗練されたTCGスタイルのカードSpriteを取得
+        Sprite cardSprite = CardVisualGenerator.GetCardSprite(card);
 
         // カード本体（スプライト画像）
         var bgSr = cardObj.AddComponent<SpriteRenderer>();
-        if (cardSprite != null)
-        {
-            bgSr.sprite = cardSprite;
-        }
-        else
-        {
-            bgSr.sprite = CreateFallbackCardSprite();
-            bgSr.color = GetCardColor(card.Data.category);
-        }
+        bgSr.sprite = cardSprite;
         bgSr.sortingOrder = 200;
-
-        // カード名テキスト
-        GameObject nameObj = new GameObject("CardName");
-        nameObj.transform.SetParent(cardObj.transform);
-        nameObj.transform.localPosition = new Vector3(0f, -1.1f, 0f);
-
-        var nameMesh = nameObj.AddComponent<TextMesh>();
-        nameMesh.text = card.Data.displayName;
-        nameMesh.fontSize = 42;
-        nameMesh.characterSize = 0.082f;
-        nameMesh.anchor = TextAnchor.MiddleCenter;
-        nameMesh.alignment = TextAlignment.Center;
-        nameMesh.color = new Color(0.15f, 0.1f, 0.05f, 1f);
-        nameMesh.fontStyle = FontStyle.Bold;
-
-        var nameRenderer = nameObj.GetComponent<MeshRenderer>();
-        nameRenderer.sortingOrder = 204;
-        ApplyCardFont(nameMesh);
-
-        // カードレベル表示（左上に丸数字①②…で表現）
-        CreateLevelBadge(cardObj, card.UpgradeLevel + 1, 205);
 
         // プレイヤー番号表示（右下に配置）- カード名と同じフォント設定
         GameObject playerObj = new GameObject("PlayerNumber");
         playerObj.transform.SetParent(cardObj.transform);
-        playerObj.transform.localPosition = new Vector3(1.0f, -2.2f, 0f);
+        playerObj.transform.localPosition = new Vector3(0.9f, -1.8f, 0f);
 
         var playerMesh = playerObj.AddComponent<TextMesh>();
         playerMesh.text = $"P{playerIndex + 1}";

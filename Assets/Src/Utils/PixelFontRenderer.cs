@@ -31,20 +31,38 @@ public static class PixelFontRenderer
     }
 
     /// <summary>
-    /// 美咲フォントをロード
+    /// 日本語フォントをロード。滑らかなフォントが Resources/Fonts にあれば優先し、
+    /// 無ければドットの misaki にフォールバックする。
+    /// (滑らかにしたい場合は Noto Sans JP / M PLUS / Kosugi 等の .ttf を Assets/Resources/Fonts/ に置くだけ)
     /// </summary>
+    private static readonly string[] JpFontCandidates =
+    {
+        // 滑らか(非ドット)を優先
+        "Fonts/NotoSansJP-Regular", "Fonts/NotoSansJP",
+        "Fonts/MPLUS1p-Regular", "Fonts/MPLUSRounded1c-Regular", "Fonts/MPLUS1p",
+        "Fonts/Kosugi-Regular", "Fonts/KosugiMaru-Regular", "Fonts/Kosugi",
+        "Fonts/ZenMaruGothic-Regular", "Fonts/ZenKakuGothicNew-Regular",
+        "Fonts/PixelMplus12-Regular", "Fonts/PixelMplus12",
+        // ドット(最後のフォールバック)
+        "Fonts/misaki_gothic", "misaki_gothic",
+    };
+
     private static void LoadMisakiFont()
     {
-        misakiFont = Resources.Load<Font>("Fonts/misaki_gothic");
-        if (misakiFont == null)
+        misakiFont = null;
+        foreach (var path in JpFontCandidates)
         {
-            // Resources以外からもロードを試みる
-            misakiFont = Resources.Load<Font>("misaki_gothic");
+            misakiFont = Resources.Load<Font>(path);
+            if (misakiFont != null) break;
         }
         misakiFontLoaded = (misakiFont != null);
-        if (!misakiFontLoaded)
+        if (misakiFontLoaded)
         {
-            Debug.LogWarning("美咲フォントが見つかりません。Assets/Resources/Fonts/misaki_gothic.ttf を配置してください。");
+            Debug.Log($"[PixelFontRenderer] 日本語フォント: {misakiFont.name}");
+        }
+        else
+        {
+            Debug.LogWarning("日本語フォントが見つかりません。Assets/Resources/Fonts/ に .ttf(misaki_gothic 等)を配置してください。");
         }
     }
 
@@ -193,18 +211,18 @@ public static class PixelFontRenderer
         }
 
         Texture2D texture;
+        bool cacheable = true;
         if (hasJapanese && misakiFontLoaded)
         {
-            // OnGUI内でのみ美咲フォントを使用（GLコマンドが必要なため）
-            // OnGUI外ではビットマップフォントにフォールバック
-            if (Event.current != null)
+            // 美咲フォントは RenderTexture への GL 描画なので OnGUI 外(カードのスプライト焼き込み等)でも動く。
+            // 万一 描画結果が空だった場合のみ、ビットマップ('?')にフォールバックする。
+            texture = RenderTextWithMisakiFont(text, color, scale);
+            if (texture == null)
             {
-                texture = RenderTextWithMisakiFont(text, color, scale);
-            }
-            else
-            {
-                // OnGUI外の場合はビットマップフォントを使用
+                // 代替の "?" はキャッシュしない(アトラス未準備などで一時失敗した場合に次回リトライできるように)
                 texture = RenderTextBitmap(text, color, scale);
+                cacheable = false;
+                Debug.LogWarning($"[PixelFontRenderer] 美咲フォント描画が空でした。ビットマップ代替('?')を使用: \"{text}\"");
             }
         }
         else
@@ -212,14 +230,49 @@ public static class PixelFontRenderer
             texture = RenderTextBitmap(text, color, scale);
         }
 
-        // キャッシュに追加（最大200エントリ）
-        if (textCache.Count > 200)
+        // キャッシュに追加（最大200エントリ）。代替結果はキャッシュしない。
+        if (cacheable)
         {
-            ClearCache();
+            if (textCache.Count > 200)
+            {
+                ClearCache();
+            }
+            textCache[cacheKey] = texture;
         }
-        textCache[cacheKey] = texture;
 
         return texture;
+    }
+
+    /// <summary>
+    /// RenderText で生成されるテクスチャの横幅(px)を、実際に描画せずに見積もる。
+    /// レイアウト(カードの折り返し・収まり判定)で使う。RenderText の幅計算と一致させる。
+    /// </summary>
+    public static int MeasureWidth(string text, int scale = PIXEL_SCALE)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+
+        bool hasJapanese = false;
+        foreach (char c in text)
+        {
+            if (IsJapanese(c)) { hasJapanese = true; break; }
+        }
+
+        if (hasJapanese && misakiFontLoaded)
+        {
+            int fontSize = 8 * scale;
+            GUIStyle style = new GUIStyle();
+            style.font = misakiFont;
+            style.fontSize = fontSize;
+            Vector2 size = style.CalcSize(new GUIContent(text));
+            return Mathf.CeilToInt(size.x) + 4; // RenderTextWithMisakiFont と同じ +4 パディング
+        }
+
+        int wsum = 0;
+        foreach (char c in text)
+        {
+            wsum += (IsJapanese(c) ? (JP_CHAR_WIDTH + CHAR_SPACING) : (CHAR_WIDTH + CHAR_SPACING)) * scale;
+        }
+        return wsum;
     }
 
     /// <summary>
@@ -251,14 +304,16 @@ public static class PixelFontRenderer
         GL.PushMatrix();
         GL.LoadPixelMatrix(0, width, 0, height);
 
-        // テキストを描画するためのマテリアル
+        // 先に文字をフォントアトラスへ要求する(新規文字でアトラス再構築が起きうる)。
+        // ※ SetPass(アトラスのバインド)より前に行うこと。順序が逆だと、再構築前の
+        //   古いアトラスをバインドしたまま描画し、まだ無い文字が空描画になる(→"?"化)。
+        misakiFont.RequestCharactersInTexture(text, fontSize, FontStyle.Normal);
+
+        // 再構築後のアトラスをバインドする
         if (misakiFont.material != null)
         {
             misakiFont.material.SetPass(0);
         }
-
-        // 文字を一つずつ描画
-        misakiFont.RequestCharactersInTexture(text, fontSize, FontStyle.Normal);
 
         float xPos = 2;
         float yPos = 2;
@@ -304,13 +359,22 @@ public static class PixelFontRenderer
 
         // 白いピクセルを指定色に変換
         Color[] pixels = texture.GetPixels();
+        int visible = 0;
         for (int i = 0; i < pixels.Length; i++)
         {
             if (pixels[i].a > 0.1f)
             {
                 pixels[i] = new Color(color.r, color.g, color.b, pixels[i].a * color.a);
+                visible++;
             }
         }
+
+        // 何も描けていない(GL が効かない環境等)なら null を返し、呼び出し側でビットマップにフォールバック。
+        if (visible == 0)
+        {
+            return null;
+        }
+
         texture.SetPixels(pixels);
         texture.Apply();
 

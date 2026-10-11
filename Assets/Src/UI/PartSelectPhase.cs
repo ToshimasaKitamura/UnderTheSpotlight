@@ -40,6 +40,15 @@ public class PartSelectPhase : MonoBehaviour, IBattlePhase
     /// <summary>各プレイヤーが選んだ部位 ID。null=部位選択不要(非攻撃 / All / スキップ)。</summary>
     public IReadOnlyList<string> TargetPartIds => targetPartIds;
 
+    /// <summary>
+    /// 新フロー用: 部位選択を CardSelect フェーズが内包する場合、確定結果を外部から流し込む。
+    /// これにより ActionCommandPhase は従来どおり <see cref="TargetPartIds"/> を読むだけでよい。
+    /// </summary>
+    public void SetTargetPartIds(string[] targets)
+    {
+        targetPartIds = targets;
+    }
+
     public bool BlocksDebugAdvance => true;
 
     private string[] targetPartIds;
@@ -63,8 +72,9 @@ public class PartSelectPhase : MonoBehaviour, IBattlePhase
 
     private void ApplyTuning()
     {
+        // 人数は tuning 未割り当てでも必ず反映する(選択パーティがあれば参加人数、無ければ tuning/既定)
+        playerCount = BattleParty.Count(tuning);
         if (tuning == null) return;
-        playerCount = tuning.playerCount;
         // CardSelect と同じ枠の制限時間を流用する(部位選択の長さは CSV 側で別管理にしてもよい)
         if (tuning.selectTimeLimit > 0f) selectTimeLimit = tuning.selectTimeLimit;
         var cols = tuning.ResolvePlayerColors();

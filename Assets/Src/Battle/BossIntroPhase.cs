@@ -150,6 +150,10 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
             // 名前でソート
             System.Array.Sort(playerObjects, (a, b) => a.name.CompareTo(b.name));
 
+            // プレイ人数に応じて味方枠レイアウトを決める
+            // (ソロ=ボス下に1枠 / 2人以上=四隅、余り枠はグレーアウト)。配置より前に行う。
+            frameUI.ConfigureForPlayerCount(playerObjects.Length);
+
             playerOriginalPositions = new Vector3[playerObjects.Length];
             playerOriginalScales = new Vector3[playerObjects.Length];
 
@@ -163,17 +167,22 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
                 playerOriginalPositions[i] = playerObjects[i].transform.position;
                 playerOriginalScales[i] = playerObjects[i].transform.localScale;
 
-                // フレームのX座標、画面外のY座標に配置
+                // 四隅ポートレート配置(拡大＋上寄せ)。X はポートレート位置、Y は画面外から登場。
                 Vector3 frameCenter = frameUI.GetAllyFrameCenter(i);
-                playerObjects[i].transform.position = new Vector3(frameCenter.x, offscreenY, 0f);
-
-                // フレームに収まるスケールを計算
                 var sr = playerObjects[i].GetComponent<SpriteRenderer>();
                 if (sr != null && sr.sprite != null)
                 {
-                    float scale = frameUI.CalculateAllyScale(sr.sprite, i);
-                    playerObjects[i].transform.localScale = new Vector3(scale, scale, 1f);
+                    frameUI.GetAllyPortraitPlacement(i, sr.sprite, out Vector3 pPos, out float pScale);
+                    playerObjects[i].transform.localScale = new Vector3(pScale, pScale, 1f);
+                    playerObjects[i].transform.position = new Vector3(pPos.x, offscreenY, 0f);
                 }
+                else
+                {
+                    playerObjects[i].transform.position = new Vector3(frameCenter.x, offscreenY, 0f);
+                }
+
+                // 登場前から窓にクリップしておく → 画面外から上がってくる間、枠の外には出ない
+                frameUI.ClipCharacterToFrame(i, playerObjects[i].transform);
             }
 
             Debug.Log($"[BossIntroPhase] {playerObjects.Length}人のプレイヤーを画面外に配置");
@@ -344,36 +353,35 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
     }
 
     /// <summary>
-    /// ボス用スプライトをResources/Images/Testから読み込む
+    /// ボス用スプライトを現在のボス定義(EnemyData.bossSpriteName)に従って読み込む。
     /// </summary>
     private Sprite LoadBossSprite()
     {
-        const string path = "Images/Test";
-        const string targetSpriteName = "AllChara_0";
+        return BossSpriteResolver.Load(ResolveBossSpriteName());
+    }
 
-        var sprites = Resources.LoadAll<Sprite>(path);
-
-        if (sprites == null || sprites.Length == 0)
+    /// <summary>
+    /// 表示するボススプライト名を現在のボス定義(EnemyData.bossSpriteName)から解決する。
+    /// RunProgress.CurrentBoss を優先し、無ければ EnemyRuntimeState.enemyData を見る。
+    /// いずれも未設定なら警告を出して既定 AllChara_0 を使う。
+    /// </summary>
+    private string ResolveBossSpriteName()
+    {
+        EnemyData data = null;
+        var run = FindObjectOfType<RunProgress>();
+        if (run != null) data = run.CurrentBoss;
+        if (data == null)
         {
-            Debug.LogError($"[BossIntroPhase] Resources/{path} からスプライトを読み込めませんでした。" +
-                $"Assets/Resources/Images/Test.png が存在し、SpriteMode=Multiple で正しくスライスされているか確認してください。");
-            return null;
+            var state = FindObjectOfType<EnemyRuntimeState>();
+            if (state != null) data = state.enemyData;
         }
 
-        Debug.Log($"[BossIntroPhase] LoadBossSprite: {sprites.Length}個のスプライトを読み込みました");
+        if (data != null && !string.IsNullOrEmpty(data.bossSpriteName))
+            return data.bossSpriteName;
 
-        foreach (var sprite in sprites)
-        {
-            if (sprite.name == targetSpriteName)
-            {
-                Debug.Log($"[BossIntroPhase] ボススプライト読み込み成功: {sprite.name}");
-                return sprite;
-            }
-        }
-
-        Debug.LogError($"[BossIntroPhase] スプライト '{targetSpriteName}' が見つかりません。" +
-            $"読み込まれたスプライト: {string.Join(", ", System.Array.ConvertAll(sprites, s => s.name))}");
-        return null;
+        Debug.LogWarning($"[BossIntroPhase] ボススプライト名が未設定です(boss={(data != null ? data.id : "null")})。" +
+            $"EnemyData.bossSpriteName を設定してください。既定 AllChara_0 を使用します。");
+        return "AllChara_0";
     }
 
     /// <summary>
@@ -476,7 +484,6 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
         // 各キャラクターを順番に登場させる（コルーチンを並列実行）
         for (int i = 0; i < allyCount; i++)
         {
-            // 遅延をつけて登場開始
             StartCoroutine(EnterSingleAlly(playerObjects[i], i));
         }
 
@@ -547,13 +554,20 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
         // 登場タイミングをずらす
         yield return new WaitForSeconds(index * allyEnterStagger);
 
-        // フレームの位置を取得
+        // 四隅ポートレートの着地位置・スケールを算出(拡大＋上寄せ)
         Vector3 frameCenter = frameUI.GetAllyFrameCenter(index);
         float camHeight = mainCamera.orthographicSize * 2f;
         float offscreenY = mainCamera.transform.position.y - camHeight / 2f - 3f;
 
-        Vector3 startPos = new Vector3(frameCenter.x, offscreenY, 0f);
         Vector3 endPos = frameCenter;
+        var sr = ally.GetComponent<SpriteRenderer>();
+        if (sr != null && sr.sprite != null)
+        {
+            frameUI.GetAllyPortraitPlacement(index, sr.sprite, out Vector3 pPos, out float pScale);
+            endPos = pPos;
+            ally.transform.localScale = new Vector3(pScale, pScale, 1f);
+        }
+        Vector3 startPos = new Vector3(endPos.x, offscreenY, 0f);
 
         float elapsed = 0f;
         while (elapsed < allyEnterDuration)
@@ -570,27 +584,31 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
 
         ally.transform.position = endPos;
 
-        // 浮遊アニメーションを追加
-        AddFloatingMotion(ally);
+        // 枠の「窓」にクリップ(下端からキャラがはみ出さない窓表示)
+        if (frameUI != null) frameUI.ClipCharacterToFrame(index, ally.transform);
+
+        // 浮遊アニメーションを追加(待機の縦揺れは少し速め)
+        AddFloatingMotion(ally, 1.0f);
     }
 
     /// <summary>
     /// キャラクターに浮遊アニメーションを追加
     /// </summary>
-    private void AddFloatingMotion(GameObject character)
+    private void AddFloatingMotion(GameObject character, float frequency = 0.5f)
     {
-        // 既にFloatingCharacterMotionがあれば何もしない
+        // 既にFloatingCharacterMotionがあれば頻度だけ更新
         var existingMotion = character.GetComponent<UnderTheSpotlight.FloatingCharacterMotion>();
         if (existingMotion != null)
         {
+            existingMotion.frequency = frequency;
             existingMotion.RebaseToCurrentPosition();
             return;
         }
 
         // FloatingCharacterMotionを追加
         var floating = character.AddComponent<UnderTheSpotlight.FloatingCharacterMotion>();
-        floating.amplitude = 0.04f;       // 上下の揺れ幅（より控えめ）
-        floating.frequency = 0.5f;        // よりゆっくりとした動き
+        floating.amplitude = 0.04f;       // 上下の揺れ幅（控えめ）
+        floating.frequency = frequency;   // 縦揺れの速さ(大きいほど速い)
         floating.randomizePhase = true;   // キャラクターごとにずらす
         floating.enableRotation = false;  // 回転なし
     }

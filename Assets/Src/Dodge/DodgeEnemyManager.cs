@@ -15,6 +15,8 @@ public class DodgeEnemyManager : MonoBehaviour
 
     [Header("参照")]
     public DanmakuManager danmakuManager;
+    [Tooltip("弾幕の進行ランプ(ボスindexごとの難易度上昇)に使う。未設定ならランプ無効。")]
+    public GameTuning tuning;
 
     public GameObject Instance { get; private set; }
     public BossDanmakuPattern DanmakuPattern { get; private set; }
@@ -33,10 +35,20 @@ public class DodgeEnemyManager : MonoBehaviour
         Vector3 startPos = spawnPosition + Vector3.up * entryHeight;
         Instance = Instantiate(enemyOnFieldPrefab, startPos, Quaternion.identity);
 
-        // プレハブの見た目(Visual子のスプライト)をそのまま使う。前面に出すため sortingOrder のみ設定。
-        // ※ SetUpSprite はルートに別スプライトを足して二重表示になるため呼ばない。サイズはプレハブ側で調整。
+        // 前面に出すため sortingOrder を設定。見た目はボス定義(EnemyData.bossSpriteName)から差し替える。
+        // ※ SetUpSprite はルートに別スプライトを足して二重表示になるため呼ばず、既存の Visual 子 SpriteRenderer に直接適用する。
         var sr = Instance.GetComponentInChildren<SpriteRenderer>();
-        if (sr != null) sr.sortingOrder = 10;
+        if (sr != null)
+        {
+            sr.sortingOrder = 10;
+            var data = enemyState != null ? enemyState.enemyData : null;
+            if (data != null && !string.IsNullOrEmpty(data.bossSpriteName))
+            {
+                var sprite = BossSpriteResolver.Load(data.bossSpriteName);
+                if (sprite != null) sr.sprite = sprite;
+                // 見つからない場合は BossSpriteResolver がエラーを出す。プレハブ既定のまま続行。
+            }
+        }
 
         float t = 0f;
         while (t < appearDuration)
@@ -61,6 +73,14 @@ public class DodgeEnemyManager : MonoBehaviour
 
         DanmakuPattern = Instance.GetComponent<BossDanmakuPattern>() ?? Instance.AddComponent<BossDanmakuPattern>();
         DanmakuPattern.danmakuManager = danmakuManager;
+
+        // 弾幕パラメータを現在のボス(EnemyData)から確定し、連戦の進行ランプを適用する。
+        var data = enemyState != null ? enemyState.enemyData : null;
+        var run = FindObjectOfType<RunProgress>();
+        int bossIndex = run != null ? run.currentBossIndex : 0;
+        float spRamp = tuning != null ? tuning.danmakuSpeedRampPerBoss : 0f;
+        float dnRamp = tuning != null ? tuning.danmakuDensityRampPerBoss : 0f;
+        DanmakuPattern.Configure(data, bossIndex, spRamp, dnRamp);
         DanmakuPattern.StartPattern();
 
         MovementPattern = Instance.GetComponent<BossMovementPattern>() ?? Instance.AddComponent<BossMovementPattern>();

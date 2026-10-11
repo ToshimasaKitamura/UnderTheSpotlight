@@ -15,6 +15,12 @@ public class BattleFrameUI : MonoBehaviour
     [Tooltip("フレーム間のマージン")]
     [SerializeField] private float margin = 0.2f;
 
+    [Header("四隅ポートレート(窓)")]
+    [Tooltip("キャラ幅を窓幅の何倍にするか(1前後。大きすぎると顔が過大に)")]
+    [SerializeField] private float portraitWidthFill = 0.65f;
+    [Tooltip("頭上の余白(窓内側高さ比)。浮遊で頭が切れない程度に確保")]
+    [Range(0f, 0.4f)][SerializeField] private float portraitTopMargin = 0.12f;
+
     [Header("共有HPゲージ設定")]
     [Tooltip("HPゲージの高さ")]
     [SerializeField] private float hpGaugeHeight = 0.2f;
@@ -52,6 +58,11 @@ public class BattleFrameUI : MonoBehaviour
     public Bounds BossFrameBounds { get; private set; }
     public Bounds[] AllyFrameBounds { get; private set; }
 
+    // 窓クリップ用: 各味方枠に窓マスク(SpriteMask)を置き、そこに収まるキャラだけ描く。
+    // 隣の窓への映り込みは、ポートレートの高さを「同列の下の窓に届かない」よう制限して防ぐ。
+    private readonly SpriteMask[] allyWindowMasks = new SpriteMask[4];
+    private readonly SpriteRenderer[][] windowCharSrs = new SpriteRenderer[4][]; // 枠にドックしたキャラの描画群
+
     // カード選択演出用の位置情報
     private Vector3[] originalAllyPositions;
     private Vector3 collapseTargetPosition;  // 左端の集合位置
@@ -60,10 +71,53 @@ public class BattleFrameUI : MonoBehaviour
 
     private Camera mainCamera;
 
+    // 実際にプレイしている人数(1..4)。ConfigureForPlayerCount で設定。
+    // 1人=ソロ(MOTHER2風にボスの下に1枠) / 2人以上=四隅、余り枠はグレーアウト。
+    private int activePlayerCount = 4;
+    public int ActivePlayerCount => activePlayerCount;
+    private static readonly Color DimmedFrameColor = new Color(0.28f, 0.28f, 0.32f, 0.55f);
+
     private void Awake()
     {
         mainCamera = Camera.main;
         CreateFrames();
+    }
+
+    /// <summary>
+    /// プレイ人数に応じて味方枠の表示を決める。BossIntro が味方配置の前に呼ぶ。
+    /// 人数に関わらず四隅の枠は常に表示し、人数を超えた枠はグレーアウトして「空枠」を示す
+    /// (ソロでもボス下に1枠にはしない)。
+    /// </summary>
+    public void ConfigureForPlayerCount(int count)
+    {
+        activePlayerCount = Mathf.Clamp(count, 1, 4);
+        if (allyFrames == null) return;
+
+        // 人数に関わらず四隅の枠は常に表示する。空席はグレーアウトして「空枠」を示す。
+        // (以前はソロ時にボス下へ1枠だけ出す仕様だったが廃止)
+        ApplySlotVisibility();
+    }
+
+    /// <summary>activePlayerCount に従って各味方枠の表示/グレーアウトを適用する。</summary>
+    private void ApplySlotVisibility()
+    {
+        if (allyFrames == null) return;
+        for (int i = 0; i < 4; i++)
+        {
+            if (allyFrames[i] == null) continue;
+            bool used = i < activePlayerCount;
+            // 人数に関わらず四隅の全枠を表示。空席はグレーアウトして空枠にする。
+            allyFrames[i].gameObject.SetActive(true);
+            if (!used) SetFrameColor(allyFrames[i], DimmedFrameColor);
+        }
+    }
+
+    /// <summary>枠(背景＋枠線)の色を一括設定する(グレーアウト用)。</summary>
+    private void SetFrameColor(Transform frame, Color color)
+    {
+        var srs = frame.GetComponentsInChildren<SpriteRenderer>(true);
+        for (int i = 0; i < srs.Length; i++)
+            if (srs[i] != null) srs[i].color = color;
     }
 
     /// <summary>
@@ -86,82 +140,153 @@ public class BattleFrameUI : MonoBehaviour
         float right = camPos.x + camWidth / 2f - margin;
         float top = camPos.y + camHeight / 2f - margin;
         float bottom = camPos.y - camHeight / 2f + margin;
-        float centerY = camPos.y;
 
-        // ボスフレーム（上半分）
-        float bossFrameHeight = (top - centerY) - margin / 2f;
-        float bossFrameWidth = right - left;
-        Vector3 bossFrameCenter = new Vector3(camPos.x, centerY + bossFrameHeight / 2f + margin / 4f, 0f);
+        // ===== OMORI 風: ボスは画面中央、味方(キャラ入りカード)は四隅 =====
+
+        // ボスフレーム（中央）
+        float bossFrameWidth = camWidth * 0.36f;
+        float bossFrameHeight = camHeight * 0.50f;
+        Vector3 bossFrameCenter = new Vector3(camPos.x, camPos.y, 0f);
 
         bossFrame = CreateSingleFrame("BossFrame", bossFrameCenter, bossFrameWidth, bossFrameHeight);
         BossFrameBounds = new Bounds(bossFrameCenter, new Vector3(bossFrameWidth, bossFrameHeight, 0f));
 
-        // 味方フレーム（下半分、4つ）
+        // 味方フレーム（四隅、4つ）。P1=左上 / P2=右上 / P3=左下 / P4=右下。
         allyFrames = new Transform[4];
         AllyFrameBounds = new Bounds[4];
         originalAllyPositions = new Vector3[4];
 
-        // HPゲージ分のスペースを確保
-        float totalHpGaugeSpace = hpGaugeHeight + hpGaugeMargin * 2f;
-        allyFrameHeight = (centerY - bottom) - margin / 2f - totalHpGaugeSpace;
-        float totalAllyWidth = right - left;
-        allyFrameWidth = (totalAllyWidth - margin * 3f) / 4f; // 4つのフレーム + 3つの間隔
+        allyFrameWidth = camWidth * 0.23f;
+        allyFrameHeight = camHeight * 0.33f;
 
-        // 左端の集合位置を設定（画面左端）
-        collapseTargetPosition = new Vector3(left - allyFrameWidth / 2f - margin, bottom + totalHpGaugeSpace + allyFrameHeight / 2f, 0f);
+        float axL = left + allyFrameWidth / 2f;    // 左列の中心x
+        float axR = right - allyFrameWidth / 2f;   // 右列の中心x
+        float ayT = top - allyFrameHeight / 2f;     // 上段の中心y
+        float ayB = bottom + allyFrameHeight / 2f;  // 下段の中心y
+        Vector3[] corners =
+        {
+            new Vector3(axL, ayT, 0f), // P1 左上
+            new Vector3(axR, ayT, 0f), // P2 右上
+            new Vector3(axL, ayB, 0f), // P3 左下
+            new Vector3(axR, ayB, 0f), // P4 右下
+        };
+
+        // 集合位置(未使用の演出用フォールバック)。画面外左に置く。
+        collapseTargetPosition = new Vector3(left - allyFrameWidth, camPos.y, 0f);
 
         for (int i = 0; i < 4; i++)
         {
-            float xPos = left + allyFrameWidth / 2f + i * (allyFrameWidth + margin);
-            // フレームはHPゲージ分上にオフセット
-            Vector3 allyFrameCenter = new Vector3(xPos, bottom + totalHpGaugeSpace + allyFrameHeight / 2f, 0f);
+            Color pc = (GameColorScheme.Players != null && i < GameColorScheme.Players.Length)
+                ? GameColorScheme.Players[i] : frameColor;
+            allyFrames[i] = CreateSingleFrame($"AllyFrame_{i + 1}", corners[i], allyFrameWidth, allyFrameHeight, pc);
+            AllyFrameBounds[i] = new Bounds(corners[i], new Vector3(allyFrameWidth, allyFrameHeight, 0f));
+            originalAllyPositions[i] = corners[i];
 
-            allyFrames[i] = CreateSingleFrame($"AllyFrame_{i + 1}", allyFrameCenter, allyFrameWidth, allyFrameHeight);
-            AllyFrameBounds[i] = new Bounds(allyFrameCenter, new Vector3(allyFrameWidth, allyFrameHeight, 0f));
-            originalAllyPositions[i] = allyFrameCenter;
+            // 窓マスク(枠の内側サイズ)。この窓に収まるキャラだけが見える=下からはみ出さない。
+            allyWindowMasks[i] = CreateWindowMask(allyFrames[i],
+                allyFrameWidth - borderWidth * 2f, allyFrameHeight - borderWidth * 2f);
         }
 
-        // 共有HPゲージを作成（4つのフレームの下に1つの大きなゲージ）
-        Vector3 sharedHpCenter = new Vector3(camPos.x, bottom + hpGaugeHeight / 2f, 0f);
-        sharedHpGaugeWidth = totalAllyWidth;
-        CreateSharedHpGauge(sharedHpCenter, sharedHpGaugeWidth, hpGaugeHeight);
+        // 共有HPゲージ（ボスフレームのすぐ下。ゲージ・演出ともに位置だけここへ）
+        float sharedWidth = camWidth * 0.42f;
+        Vector3 sharedHpCenter = new Vector3(
+            BossFrameBounds.center.x,
+            BossFrameBounds.min.y - hpGaugeMargin - hpGaugeHeight / 2f,
+            0f);
+        sharedHpGaugeWidth = sharedWidth;
+        CreateSharedHpGauge(sharedHpCenter, sharedWidth, hpGaugeHeight);
 
         // HPゲージパーティクルを作成
-        CreateHpParticleSystem(sharedHpCenter, totalAllyWidth, hpGaugeHeight);
+        CreateHpParticleSystem(sharedHpCenter, sharedWidth, hpGaugeHeight);
 
-        Debug.Log($"[BattleFrameUI] フレーム生成完了: ボス1個、味方4個");
+        Debug.Log($"[BattleFrameUI] フレーム生成完了(OMORI風): ボス中央1個、味方四隅4個");
     }
 
     /// <summary>
-    /// 単一のフレームを生成
+    /// 単一のフレームを生成。border に枠線色を渡すとカード風の縁取りになる(未指定は既定 frameColor)。
     /// </summary>
-    private Transform CreateSingleFrame(string name, Vector3 center, float width, float height)
+    private Transform CreateSingleFrame(string name, Vector3 center, float width, float height, Color? border = null)
     {
+        Color col = border ?? frameColor;
         GameObject frameObj = new GameObject(name);
         frameObj.transform.SetParent(transform);
         frameObj.transform.position = center;
 
-        // 背景（少し暗い色）
+        // 背景（枠色を暗く落としたカード地。少し不透明に）
         CreateFramePart(frameObj.transform, "Background", Vector3.zero, width - borderWidth * 2f, height - borderWidth * 2f,
-            new Color(frameColor.r * 0.3f, frameColor.g * 0.3f, frameColor.b * 0.3f, 0.5f), -1);
+            new Color(col.r * 0.18f, col.g * 0.18f, col.b * 0.22f, 0.85f), -1);
 
         // 上の枠線
         CreateFramePart(frameObj.transform, "TopBorder", new Vector3(0f, height / 2f - borderWidth / 2f, 0f),
-            width, borderWidth, frameColor, 0);
+            width, borderWidth, col, 0);
 
         // 下の枠線
         CreateFramePart(frameObj.transform, "BottomBorder", new Vector3(0f, -height / 2f + borderWidth / 2f, 0f),
-            width, borderWidth, frameColor, 0);
+            width, borderWidth, col, 0);
 
         // 左の枠線
         CreateFramePart(frameObj.transform, "LeftBorder", new Vector3(-width / 2f + borderWidth / 2f, 0f, 0f),
-            borderWidth, height, frameColor, 0);
+            borderWidth, height, col, 0);
 
         // 右の枠線
         CreateFramePart(frameObj.transform, "RightBorder", new Vector3(width / 2f - borderWidth / 2f, 0f, 0f),
-            borderWidth, height, frameColor, 0);
+            borderWidth, height, col, 0);
 
         return frameObj.transform;
+    }
+
+    /// <summary>
+    /// 味方枠の「窓」マスクを生成。ここに収まるキャラ(VisibleInsideMask)だけが描かれる。
+    /// </summary>
+    private SpriteMask CreateWindowMask(Transform frame, float innerW, float innerH)
+    {
+        var maskGo = new GameObject("Window", typeof(SpriteMask));
+        maskGo.transform.SetParent(frame, false);
+        maskGo.transform.localPosition = Vector3.zero;
+        maskGo.transform.localScale = new Vector3(Mathf.Max(0.01f, innerW), Mathf.Max(0.01f, innerH), 1f);
+        var mask = maskGo.GetComponent<SpriteMask>();
+        mask.sprite = CreateWhiteSprite();
+        return mask;
+    }
+
+    /// <summary>
+    /// キャラを枠の窓にドックしてクリップする(下からはみ出さない窓表示)。
+    /// BossIntro が枠へ配置し終えた直後に呼ぶ。
+    /// 隣(特に同じ列の下)の枠への映り込みは、ポートレート高さの制限
+    /// (<see cref="GetAllyPortraitPlacement"/>)で防いでいる。
+    /// </summary>
+    public void ClipCharacterToFrame(int index, Transform character)
+    {
+        if (index < 0 || index >= 4 || character == null) return;
+        windowCharSrs[index] = character.GetComponentsInChildren<SpriteRenderer>(true);
+        ApplyWindowClip(index, true);
+    }
+
+    /// <summary>枠 index のキャラのクリップ(VisibleInsideMask)を入/切する。</summary>
+    private void ApplyWindowClip(int index, bool on)
+    {
+        var srs = windowCharSrs[index];
+        if (srs == null) return;
+        var mode = on ? SpriteMaskInteraction.VisibleInsideMask : SpriteMaskInteraction.None;
+        for (int i = 0; i < srs.Length; i++)
+            if (srs[i] != null) srs[i].maskInteraction = mode;
+    }
+
+    /// <summary>ドック中の全キャラの窓クリップを一括で入/切する。</summary>
+    private void SetAllWindowClipping(bool on)
+    {
+        for (int i = 0; i < 4; i++) ApplyWindowClip(i, on);
+    }
+
+    /// <summary>
+    /// 指定プレイヤーの窓クリップを入/切する(公開)。
+    /// clip=true で窓に収める(上半身のみ)、false で全体像(枠からはみ出して全身)。
+    /// カード選択で「手番プレイヤーだけ全体像」を出すのに使う。
+    /// </summary>
+    public void SetPlayerWindowClip(int index, bool clip)
+    {
+        if (index < 0 || index >= 4) return;
+        ApplyWindowClip(index, clip);
     }
 
     /// <summary>
@@ -401,6 +526,53 @@ public class BattleFrameUI : MonoBehaviour
     public Vector3 GetBossFrameCenter()
     {
         return BossFrameBounds.center;
+    }
+
+    /// <summary>
+    /// 四隅ポートレート配置: キャラを拡大し、頭を窓上端の少し下に合わせて、
+    /// 下半身は窓の外(＝クリップ)へ出す。窓には上半身＋顔だけが見える。
+    /// </summary>
+    public void GetAllyPortraitPlacement(int index, Sprite sprite, out Vector3 pos, out float scale)
+    {
+        pos = (index >= 0 && index < AllyFrameBounds.Length) ? AllyFrameBounds[index].center : Vector3.zero;
+        scale = 1f;
+        if (sprite == null || index < 0 || index >= AllyFrameBounds.Length) return;
+
+        Bounds fb = AllyFrameBounds[index];
+        float innerW = fb.size.x - borderWidth * 2f;
+        float innerH = fb.size.y - borderWidth * 2f;
+        float spriteW = sprite.rect.width / sprite.pixelsPerUnit;
+        float spriteH = sprite.rect.height / sprite.pixelsPerUnit;
+        if (spriteW <= 0.0001f || spriteH <= 0.0001f) return;
+
+        // 頭(スプライト上端)を置く高さ = 窓上端の少し下
+        float windowTop = fb.center.y + innerH * 0.5f;
+        float headroom = innerH * Mathf.Clamp01(portraitTopMargin);
+        float spriteTop = windowTop - headroom;
+
+        // 幅基準で拡大(窓幅を少し超える=上半身が窓を満たす)
+        scale = (innerW / spriteW) * Mathf.Max(0.1f, portraitWidthFill);
+
+        // 同じ列の「下の窓」に届かないよう、スプライト下端を制限してスケールを抑える。
+        // (上段 P1/P2 の下は P3/P4。下段は下に窓が無いので制限なし)
+        if (index < 2 && index + 2 < AllyFrameBounds.Length)
+        {
+            Bounds below = AllyFrameBounds[index + 2];
+            float belowInnerH = below.size.y - borderWidth * 2f;
+            float belowTop = below.center.y + belowInnerH * 0.5f;
+            float bottomLimit = belowTop + innerH * 0.15f;      // 下窓の上端 + 余白
+            float maxSpriteH = spriteTop - bottomLimit;         // ここに収まる最大高さ
+            if (maxSpriteH > 0.01f)
+            {
+                float maxScale = maxSpriteH / spriteH;
+                scale = Mathf.Min(scale, maxScale);
+            }
+        }
+
+        // pivot を考慮して、スプライト上端が spriteTop に来るよう位置決め
+        float pivotYNorm = sprite.pivot.y / Mathf.Max(1f, sprite.rect.height); // 0=下,1=上
+        float topFromPos = spriteH * scale * (1f - pivotYNorm);                 // pos から上端まで
+        pos = new Vector3(fb.center.x, spriteTop - topFromPos, 0f);
     }
 
     /// <summary>
@@ -668,6 +840,8 @@ public class BattleFrameUI : MonoBehaviour
     /// </summary>
     public void HideAllyFramesOnly()
     {
+        // 枠(＝窓マスク)を消す間はキャラを全身表示に戻す(カード選択のズームで全体が見えるように)
+        SetAllWindowClipping(false);
         for (int i = 0; i < 4; i++)
         {
             if (allyFrames[i] != null)
@@ -675,6 +849,65 @@ public class BattleFrameUI : MonoBehaviour
                 allyFrames[i].gameObject.SetActive(false);
             }
         }
+    }
+
+    /// <summary>
+    /// 味方枠を「フェード＋わずかに拡大」でカッコよく消す(カード選択突入時の演出)。
+    /// 消えた後は色・スケールを元に戻して非表示にする(次に表示する時のため)。
+    /// </summary>
+    public IEnumerator HideAllyFramesAnimated(float duration)
+    {
+        var frameSrs = new SpriteRenderer[4][];
+        var baseCols = new Color[4][];
+        var baseScales = new Vector3[4];
+        for (int i = 0; i < 4; i++)
+        {
+            if (allyFrames[i] == null) { frameSrs[i] = null; continue; }
+            var srs = allyFrames[i].GetComponentsInChildren<SpriteRenderer>(true); // SpriteMask は含まれない
+            frameSrs[i] = srs;
+            var cols = new Color[srs.Length];
+            for (int j = 0; j < srs.Length; j++) cols[j] = (srs[j] != null) ? srs[j].color : Color.white;
+            baseCols[i] = cols;
+            baseScales[i] = allyFrames[i].localScale;
+        }
+
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / duration);
+            float a = 1f - p * p;         // フェードアウト(イーズイン)
+            float sc = 1f + 0.18f * p;    // ふわっと拡大しながら消える
+            for (int i = 0; i < 4; i++)
+            {
+                if (frameSrs[i] == null || allyFrames[i] == null) continue;
+                allyFrames[i].localScale = baseScales[i] * sc;
+                var srs = frameSrs[i];
+                var cols = baseCols[i];
+                for (int j = 0; j < srs.Length; j++)
+                {
+                    if (srs[j] == null) continue;
+                    Color c = cols[j];
+                    c.a *= a;
+                    srs[j].color = c;
+                }
+            }
+            yield return null;
+        }
+
+        // 後始末: 非表示にして色・スケールを元へ(再表示に備える)
+        for (int i = 0; i < 4; i++)
+        {
+            if (allyFrames[i] == null) continue;
+            allyFrames[i].gameObject.SetActive(false);
+            allyFrames[i].localScale = baseScales[i];
+            var srs = frameSrs[i];
+            var cols = baseCols[i];
+            if (srs != null)
+                for (int j = 0; j < srs.Length; j++)
+                    if (srs[j] != null) srs[j].color = cols[j];
+        }
+        SetAllWindowClipping(false);
     }
 
     /// <summary>
@@ -686,11 +919,14 @@ public class BattleFrameUI : MonoBehaviour
         {
             if (allyFrames[i] != null)
             {
-                allyFrames[i].gameObject.SetActive(true);
                 // 元の位置に戻す
                 allyFrames[i].position = originalAllyPositions[i];
             }
         }
+        // 人数に応じた表示/グレーアウト(ソロは1枠のみ表示、複数は空席をグレーアウト)
+        ApplySlotVisibility();
+        // 枠が出ている間はキャラを窓にクリップ(下からはみ出さない)
+        SetAllWindowClipping(true);
     }
 
     /// <summary>

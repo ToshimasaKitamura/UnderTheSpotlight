@@ -27,6 +27,24 @@ public class EnemyData : ScriptableObject
     [Header("表示(任意)")]
     [Tooltip("敵アイコン(EnemyOnField 表示用、空でも可)。")]
     public Sprite icon;
+    [Tooltip("バトル/弾幕で使うボススプライト名(Resources/Images/Test の AllChara_N)。空なら既定 AllChara_0。")]
+    public string bossSpriteName;
+
+    [Header("弾幕(難易度パラメータ)")]
+    [Tooltip("1リング当たりの弾数。多いほど難しい。")]
+    public int danmakuBulletsPerRing = 20;
+    [Tooltip("弾速(ワールド単位/秒)。速いほど難しい。")]
+    public float danmakuBulletSpeed = 3f;
+    [Tooltip("発射間隔(秒)。短いほど難しい。")]
+    public float danmakuFireInterval = 1.0f;
+    [Tooltip("発射ごとに加える角度オフセット(度)。回転する弾幕。")]
+    public float danmakuRingAngleStepDeg = 7f;
+    [Tooltip("このボスが撃つ弾の種別(基本)。Normal=白黒 / Fast=速弾(クナイ) / Heal=緑の回復弾。")]
+    public BulletKind danmakuBulletKind = BulletKind.Normal;
+    [Tooltip("弾幕パターン。Ring=全方位 / AimedFan=自機狙いの扇 / Mixed=両者を交互に切替。")]
+    public DanmakuPatternType danmakuPattern = DanmakuPatternType.Ring;
+    [Tooltip("この数だけ弾を撃つごとに1発を回復弾(Heal)にする。0で無効。ボスの自己回復ギミック用。")]
+    public int danmakuHealEveryNShots = 0;
 
     /// <summary>id で部位を引く。見つからなければ null。</summary>
     public EnemyPart FindPart(string partId)

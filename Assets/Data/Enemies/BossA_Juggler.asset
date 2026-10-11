@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f244b77db34742a29831ee517e7edfb, type: 3}
+  m_Name: BossA_Juggler
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyData
+  id: boss_a
+  displayName: "ジャグラー"
+  parts:
+  - id: head
+    displayName: "頭"
+    maxHp: 6
+    zone: 0
+    destructionEffect: 1
+    hintCue: "「あたまはダメ、あたまはぁ〜！」とぼうしを押さえてよろける(頭破壊で次の攻撃が弱まる)"
+    hitboxCenter: {x: 0.5, y: 0.82}
+    hitboxSize: {x: 0.35, y: 0.28}
+  - id: arms
+    displayName: "腕"
+    maxHp: 6
+    zone: 0
+    destructionEffect: 3
+    hintCue: "お手玉をぐるぐる回して「たまの数、減らせるものなら減らしてみな！」(腕破壊で弾数が減る)"
+    hitboxCenter: {x: 0.5, y: 0.5}
+    hitboxSize: {x: 0.7, y: 0.28}
+  - id: legs
+    displayName: "足"
+    maxHp: 4
+    zone: 1
+    destructionEffect: 5
+    hintCue: "ステップを踏みながら「足を止められるかな？」と挑発(足破壊で移動を止められる)"
+    hitboxCenter: {x: 0.5, y: 0.18}
+    hitboxSize: {x: 0.55, y: 0.24}
+  icon: {fileID: 0}
+  bossSpriteName: AllChara_85
+  danmakuBulletsPerRing: 14
+  danmakuBulletSpeed: 2.4
+  danmakuFireInterval: 1.2
+  danmakuRingAngleStepDeg: 10
+  danmakuBulletKind: 0

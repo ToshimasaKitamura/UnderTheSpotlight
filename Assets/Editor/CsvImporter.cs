@@ -8,9 +8,9 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Excel から書き出した CSV を読み、Card / Deck / GameTuning の ScriptableObject を更新する。
-/// メニュー: UnderTheSpotlight > Reimport from CSV / Export to CSV
-/// 既定パス: Assets/Data/csv/{cards.csv, decks.csv, game_tuning.csv}
+/// Excel / スプレッドシートから書き出した CSV を読み、Card / Deck / GameTuning / Enemy の ScriptableObject を自動生成・更新する。
+/// メニュー: UnderTheSpotlight > Reimport from CSV (Excel読み込み・カード自動生成)
+/// 既定パス: Assets/Data/csv/{cards.csv, decks.csv, game_tuning.csv, enemy_parts.csv}
 /// CSV はカンマ区切り・UTF-8(BOM 可)・セル内カンマは "..."で囲み、内部の二重引用符は "" でエスケープ。
 /// </summary>
 public static class CsvImporter
@@ -21,13 +21,24 @@ public static class CsvImporter
     private const string TuningCsv = "game_tuning.csv";
     private const string EnemyPartsCsv = "enemy_parts.csv";
 
-    private const string CardAssetDir = "Assets/Data/Cards";
-    private const string DeckAssetDir = "Assets/Data";
+    private const string CardAssetDir = "Assets/Resources/Data/Cards";
+    private const string DeckAssetDir = "Assets/Resources/Data";
     private const string EnemyAssetDir = "Assets/Data/Enemies";
-    private const string TuningAssetPath = "Assets/Data/GameTuning.asset";
+    private const string TuningAssetPath = "Assets/Resources/Data/GameTuning.asset";
 
-    [MenuItem("UnderTheSpotlight/Reimport from CSV", priority = 100)]
+    [MenuItem("UnderTheSpotlight/Reimport from CSV (Excel読み込み・カード自動生成)", priority = 100)]
     public static void ReimportAll()
+    {
+        string summary = ReimportAllSilent();
+        EditorUtility.DisplayDialog("CSV Reimport",
+            "CSVからカードと設定を自動生成・更新しました！\n\n" + summary, "OK");
+    }
+
+    /// <summary>
+    /// ダイアログを出さずに全 CSV を反映する(CSV 保存時の自動インポートから呼ぶ)。
+    /// 返り値は件数サマリ文字列。
+    /// </summary>
+    public static string ReimportAllSilent()
     {
         int cards = ReimportCards();
         int decks = ReimportDecks();
@@ -35,12 +46,12 @@ public static class CsvImporter
         int enemies = ReimportEnemies();
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        EditorUtility.DisplayDialog("CSV Reimport",
-            $"Cards: {cards} 件\nDecks: {decks} 件\nGameTuning: {(tuning ? "更新" : "スキップ")}\nEnemies: {enemies} 件",
-            "OK");
+        string summary = $"カード {cards} 件 / デッキ {decks} 件 / GameTuning {(tuning ? "更新" : "スキップ")} / 敵部位 {enemies} 件";
+        Debug.Log($"[CsvImporter] CSV インポート完了: {summary}");
+        return summary;
     }
 
-    [MenuItem("UnderTheSpotlight/Export Current to CSV", priority = 101)]
+    [MenuItem("UnderTheSpotlight/Export Current to CSV (Excel用に書き出し)", priority = 101)]
     public static void ExportAll()
     {
         Directory.CreateDirectory(CsvDir);
@@ -49,7 +60,7 @@ public static class CsvImporter
         ExportTuning();
         ExportEnemies();
         AssetDatabase.Refresh();
-        EditorUtility.DisplayDialog("CSV Export", $"出力先: {CsvDir}", "OK");
+        EditorUtility.DisplayDialog("CSV Export", $"現在の設定をCSVに出力しました。\nExcelで編集可能です。\n\n出力先: {CsvDir}", "OK");
     }
 
     // ------------ Cards ------------
@@ -59,7 +70,7 @@ public static class CsvImporter
         "effectType","attackRange","cardColor"
     };
 
-    private static int ReimportCards()
+    public static int ReimportCards()
     {
         string path = Path.Combine(CsvDir, CardsCsv);
         if (!File.Exists(path)) { Debug.LogWarning($"[CsvImporter] not found: {path}"); return 0; }
@@ -84,10 +95,10 @@ public static class CsvImporter
         {
             var row = rows[r];
             string id = Get(row, col, "id");
-            if (string.IsNullOrWhiteSpace(id)) continue;
+            if (string.IsNullOrWhiteSpace(id) || id.StartsWith("#")) continue; // コメント行スキップ
 
             CardData card;
-            if (!existing.TryGetValue(id, out card))
+            if (!existing.TryGetValue(id, out card) || card == null)
             {
                 card = ScriptableObject.CreateInstance<CardData>();
                 string assetPath = $"{CardAssetDir}/{id}.asset";
@@ -98,28 +109,28 @@ public static class CsvImporter
             card.id = id;
             card.displayName = Get(row, col, "displayName");
             card.description = Get(row, col, "description");
-            card.category = (CardCategory)ParseInt(Get(row, col, "category"), 0);
-            card.tier = (CardTier)ParseInt(Get(row, col, "tier"), 0);
+            card.category = ParseCategory(Get(row, col, "category"));
+            card.tier = ParseTier(Get(row, col, "tier"));
             card.baseDifficultyModifier = ParseInt(Get(row, col, "baseDifficultyModifier"), 0);
             card.basePower = ParseInt(Get(row, col, "basePower"), 1);
             card.difficultyPerUpgrade = ParseInt(Get(row, col, "difficultyPerUpgrade"), 1);
             card.powerPerUpgrade = ParseInt(Get(row, col, "powerPerUpgrade"), 1);
-            card.effectType = (CardEffectType)ParseInt(Get(row, col, "effectType"), 0);
-            // attackRange: int(0-3) もしくは enum名 "Single"/"Upper"/"Lower"/"All" を受け付ける。
-            // 未指定の旧フォーマット行は category=Attack なら Single、それ以外は All にフォールバック。
+            card.effectType = ParseEffectType(Get(row, col, "effectType"));
+            
             string arRaw = Get(row, col, "attackRange");
             if (string.IsNullOrWhiteSpace(arRaw))
                 card.attackRange = card.category == CardCategory.Attack ? CardAttackRange.Single : CardAttackRange.All;
             else
-                card.attackRange = ParseEnum(arRaw, card.attackRange);
-            card.cardColor = ParseColor(Get(row, col, "cardColor"));
+                card.attackRange = ParseAttackRange(arRaw, card.category);
+
+            card.cardColor = ParseColor(Get(row, col, "cardColor"), card.category);
             EditorUtility.SetDirty(card);
             count++;
         }
         return count;
     }
 
-    private static void ExportCards()
+    public static void ExportCards()
     {
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", CardHeader));
@@ -130,20 +141,127 @@ public static class CsvImporter
             if (c == null) continue;
             sb.AppendLine(string.Join(",",
                 Quote(c.id), Quote(c.displayName), Quote(c.description),
-                ((int)c.category).ToString(), ((int)c.tier).ToString(),
+                CategoryToString(c.category), TierToString(c.tier),
                 c.baseDifficultyModifier.ToString(), c.basePower.ToString(),
                 c.difficultyPerUpgrade.ToString(), c.powerPerUpgrade.ToString(),
-                ((int)c.effectType).ToString(),
-                ((int)c.attackRange).ToString(),
+                EffectTypeToString(c.effectType),
+                AttackRangeToString(c.attackRange),
                 Quote(ColorToHex(c.cardColor))));
         }
         WriteUtf8Bom(Path.Combine(CsvDir, CardsCsv), sb.ToString());
     }
 
+    // ------------ Enum Parsing with Japanese support ------------
+    private static CardCategory ParseCategory(string s)
+    {
+        s = (s ?? "").Trim();
+        if (s == "0" || s.Equals("Attack", StringComparison.OrdinalIgnoreCase) || s == "攻撃" || s == "アタック") return CardCategory.Attack;
+        if (s == "1" || s.Equals("Defend", StringComparison.OrdinalIgnoreCase) || s == "防御" || s == "ガード" || s == "ディフェンス") return CardCategory.Defend;
+        if (s == "2" || s.Equals("Heal", StringComparison.OrdinalIgnoreCase) || s == "回復" || s == "ヒール") return CardCategory.Heal;
+        if (s == "3" || s.Equals("Buff", StringComparison.OrdinalIgnoreCase) || s == "バフ" || s == "強化") return CardCategory.Buff;
+        if (s == "4" || s.Equals("Special", StringComparison.OrdinalIgnoreCase) || s == "特殊" || s == "スペシャル") return CardCategory.Special;
+        return CardCategory.Attack;
+    }
+
+    private static string CategoryToString(CardCategory cat)
+    {
+        switch (cat)
+        {
+            case CardCategory.Attack: return "攻撃";
+            case CardCategory.Defend: return "防御";
+            case CardCategory.Heal: return "回復";
+            case CardCategory.Buff: return "バフ";
+            case CardCategory.Special: return "特殊";
+            default: return cat.ToString();
+        }
+    }
+
+    private static CardTier ParseTier(string s)
+    {
+        s = (s ?? "").Trim();
+        if (s == "0" || s.Equals("Basic", StringComparison.OrdinalIgnoreCase) || s == "基本" || s == "ノーマル") return CardTier.Basic;
+        if (s == "1" || s.Equals("Special", StringComparison.OrdinalIgnoreCase) || s == "特殊" || s == "レア") return CardTier.Special;
+        if (s == "2" || s.Equals("Ultimate", StringComparison.OrdinalIgnoreCase) || s == "必殺" || s == "フィナーレ" || s == "ウルトラ") return CardTier.Ultimate;
+        return CardTier.Basic;
+    }
+
+    private static string TierToString(CardTier tier)
+    {
+        switch (tier)
+        {
+            case CardTier.Basic: return "基本";
+            case CardTier.Special: return "特殊";
+            case CardTier.Ultimate: return "必殺";
+            default: return tier.ToString();
+        }
+    }
+
+    private static CardAttackRange ParseAttackRange(string s, CardCategory category)
+    {
+        s = (s ?? "").Trim();
+        if (s == "0" || s.Equals("Single", StringComparison.OrdinalIgnoreCase) || s == "単体" || s == "部位選択") return CardAttackRange.Single;
+        if (s == "1" || s.Equals("Upper", StringComparison.OrdinalIgnoreCase) || s == "上半身" || s == "上部") return CardAttackRange.Upper;
+        if (s == "2" || s.Equals("Lower", StringComparison.OrdinalIgnoreCase) || s == "下半身" || s == "下部") return CardAttackRange.Lower;
+        if (s == "3" || s.Equals("All", StringComparison.OrdinalIgnoreCase) || s == "全体" || s == "全員") return CardAttackRange.All;
+        return category == CardCategory.Attack ? CardAttackRange.Single : CardAttackRange.All;
+    }
+
+    private static string AttackRangeToString(CardAttackRange range)
+    {
+        switch (range)
+        {
+            case CardAttackRange.Single: return "単体";
+            case CardAttackRange.Upper: return "上半身";
+            case CardAttackRange.Lower: return "下半身";
+            case CardAttackRange.All: return "全体";
+            default: return range.ToString();
+        }
+    }
+
+    private static CardEffectType ParseEffectType(string s)
+    {
+        s = (s ?? "").Trim();
+        if (s == "0" || s.Equals("None", StringComparison.OrdinalIgnoreCase) || s == "なし") return CardEffectType.None;
+        if (s == "1" || s.Equals("AttackNoHitBonus", StringComparison.OrdinalIgnoreCase) || s.Contains("ノーヒット") || s.Contains("大ダメージ")) return CardEffectType.AttackNoHitBonus;
+        if (s == "2" || s.Equals("DefendTauntReduce", StringComparison.OrdinalIgnoreCase) || s.Contains("挑発") || s.Contains("軽減") || s.Contains("対象")) return CardEffectType.DefendTauntReduce;
+        if (s == "3" || s.Equals("HealImmediateAndOnDodge", StringComparison.OrdinalIgnoreCase) || s.Contains("回復") || s.Contains("回避")) return CardEffectType.HealImmediateAndOnDodge;
+        if (s == "4" || s.Equals("BuffGeneric", StringComparison.OrdinalIgnoreCase) || s.Contains("バフ") || s.Contains("上昇")) return CardEffectType.BuffGeneric;
+        if (s == "5" || s.Equals("SpecialSuccessScaling", StringComparison.OrdinalIgnoreCase) || s.Contains("成功数") || s.Contains("アクションコマンド")) return CardEffectType.SpecialSuccessScaling;
+        return ParseEnum(s, CardEffectType.None);
+    }
+
+    private static string EffectTypeToString(CardEffectType effect)
+    {
+        switch (effect)
+        {
+            case CardEffectType.None: return "None";
+            case CardEffectType.AttackNoHitBonus: return "AttackNoHitBonus";
+            case CardEffectType.DefendTauntReduce: return "DefendTauntReduce";
+            case CardEffectType.HealImmediateAndOnDodge: return "HealImmediateAndOnDodge";
+            case CardEffectType.BuffGeneric: return "BuffGeneric";
+            case CardEffectType.SpecialSuccessScaling: return "SpecialSuccessScaling";
+            default: return effect.ToString();
+        }
+    }
+
+    private static Color ParseColor(string s, CardCategory category)
+    {
+        if (ColorUtility.TryParseHtmlString((s ?? "").Trim(), out var c)) return c;
+        switch (category)
+        {
+            case CardCategory.Attack: return new Color(1f, 0.35f, 0.35f, 1f);
+            case CardCategory.Defend: return new Color(0.36f, 0.6f, 1f, 1f);
+            case CardCategory.Heal: return new Color(0.36f, 0.9f, 0.4f, 1f);
+            case CardCategory.Buff: return new Color(0.8f, 0.5f, 1f, 1f);
+            case CardCategory.Special: return new Color(1f, 0.85f, 0.35f, 1f);
+            default: return Color.white;
+        }
+    }
+
     // ------------ Decks ------------
     private static readonly string[] DeckHeader = { "deckName", "cardId", "copies" };
 
-    private static int ReimportDecks()
+    public static int ReimportDecks()
     {
         string path = Path.Combine(CsvDir, DecksCsv);
         if (!File.Exists(path)) { Debug.LogWarning($"[CsvImporter] not found: {path}"); return 0; }
@@ -194,7 +312,7 @@ public static class CsvImporter
         return count;
     }
 
-    private static void ExportDecks()
+    public static void ExportDecks()
     {
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", DeckHeader));
@@ -219,15 +337,14 @@ public static class CsvImporter
         "hitboxCenterX","hitboxCenterY","hitboxSizeX","hitboxSizeY"
     };
 
-    private static int ReimportEnemies()
+    public static int ReimportEnemies()
     {
         string path = Path.Combine(CsvDir, EnemyPartsCsv);
-        if (!File.Exists(path)) return 0; // 任意ファイル(無くてもエラーにしない)
+        if (!File.Exists(path)) return 0;
         var rows = ReadCsv(path);
         if (rows.Count < 2) return 0;
         var col = MakeIndex(rows[0]);
 
-        // enemyId → (displayName, parts) で集約
         var bucket = new Dictionary<string, (string display, List<EnemyPart> parts)>();
         for (int r = 1; r < rows.Count; r++)
         {
@@ -241,7 +358,6 @@ public static class CsvImporter
                 entry = (enemyDisplay, new List<EnemyPart>());
                 bucket[enemyId] = entry;
             }
-            // 先勝ちで displayName を確定(行ごとにブレないように)
             if (string.IsNullOrWhiteSpace(entry.display) && !string.IsNullOrWhiteSpace(enemyDisplay))
             {
                 entry.display = enemyDisplay;
@@ -286,7 +402,7 @@ public static class CsvImporter
         return count;
     }
 
-    private static void ExportEnemies()
+    public static void ExportEnemies()
     {
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", EnemyHeader));
@@ -315,7 +431,6 @@ public static class CsvImporter
     // ------------ GameTuning ------------
     private static readonly string[] TuningHeader = { "key", "value", "description" };
 
-    // 既知パラメータの口語説明(エクスポート時に書き戻す)。【】内の○が value に対応。
     private static readonly Dictionary<string, string> KnownTuningDesc = new Dictionary<string, string>
     {
         { "playerCount", "プレイヤーは【○人】で戦う" },
@@ -338,7 +453,7 @@ public static class CsvImporter
         { "playerCallouts", "プレイヤー切替時のセリフを【|区切りで列挙】 (1Pから順)" },
     };
 
-    private static bool ReimportTuning()
+    public static bool ReimportTuning()
     {
         string path = Path.Combine(CsvDir, TuningCsv);
         if (!File.Exists(path)) { Debug.LogWarning($"[CsvImporter] not found: {path}"); return false; }
@@ -353,7 +468,6 @@ public static class CsvImporter
             AssetDatabase.CreateAsset(tuning, TuningAssetPath);
         }
 
-        // customParams は CSV を真として再構築
         if (tuning.customParams == null) tuning.customParams = new List<GameTuning.CustomParam>();
         tuning.customParams.Clear();
 
@@ -366,7 +480,6 @@ public static class CsvImporter
             k = k.Trim();
             if (!ApplyKnownTuning(tuning, k, v))
             {
-                // 未知 key はプランナー追加分として customParams へ
                 tuning.SetCustom(k, v, d);
             }
         }
@@ -395,10 +508,9 @@ public static class CsvImporter
             case "interRoundDelay": t.interRoundDelay = ParseFloat(s, t.interRoundDelay); return true;
             case "resultFlashDuration": t.resultFlashDuration = ParseFloat(s, t.resultFlashDuration); return true;
             case "playerTurnDuration": t.playerTurnDuration = ParseFloat(s, t.playerTurnDuration); return true;
-            case "playerColors": t.playerColors = SplitList(s); return true;        // 旧形式互換
-            case "playerCallouts": t.playerCallouts = SplitList(s, '|'); return true; // 旧形式互換
+            case "playerColors": t.playerColors = SplitList(s); return true;
+            case "playerCallouts": t.playerCallouts = SplitList(s, '|'); return true;
             default:
-                // 配列項目を 1Pずつの行で書く新形式: playerColor_1, playerCallout_2 等
                 if (TryApplyIndexed(k, "playerColor_", s, ref t.playerColors)) return true;
                 if (TryApplyIndexed(k, "playerCallout_", s, ref t.playerCallouts)) return true;
                 return false;
@@ -422,7 +534,7 @@ public static class CsvImporter
         return true;
     }
 
-    private static void ExportTuning()
+    public static void ExportTuning()
     {
         var t = AssetDatabase.LoadAssetAtPath<GameTuning>(TuningAssetPath);
         if (t == null) return;
@@ -446,7 +558,6 @@ public static class CsvImporter
         Row("interRoundDelay", Inv(t.interRoundDelay));
         Row("resultFlashDuration", Inv(t.resultFlashDuration));
         Row("playerTurnDuration", Inv(t.playerTurnDuration));
-        // 配列項目は 1行=1要素 の表形式で書き出す(セル内区切りなし)
         if (t.playerColors != null)
         {
             for (int i = 0; i < t.playerColors.Length; i++)
@@ -457,7 +568,6 @@ public static class CsvImporter
             for (int i = 0; i < t.playerCallouts.Length; i++)
                 sb.AppendLine($"{Quote("playerCallout_" + (i+1))},{Quote(t.playerCallouts[i] ?? "")},{Quote((i+1) + "Pに切り替わったときのセリフ")}");
         }
-        // customParams も書き戻し(プランナー追加分の description を保持)
         if (t.customParams != null)
         {
             foreach (var p in t.customParams)
@@ -473,7 +583,7 @@ public static class CsvImporter
     private static List<List<string>> ReadCsv(string path)
     {
         string text = File.ReadAllText(path, Encoding.UTF8);
-        if (text.Length > 0 && text[0] == '﻿') text = text.Substring(1);
+        if (text.Length > 0 && text[0] == '\uFEFF') text = text.Substring(1);
         var rows = new List<List<string>>();
         var cur = new List<string>();
         var cell = new StringBuilder();
@@ -536,12 +646,6 @@ public static class CsvImporter
         if (s == "0" || s == "false" || s == "no" || s == "n") return false;
         return fallback;
     }
-    private static Color ParseColor(string s)
-    {
-        if (ColorUtility.TryParseHtmlString((s ?? "").Trim(), out var c)) return c;
-        return Color.white;
-    }
-    /// <summary>enum名 or 整数値 のどちらでもパースできる。プランナーが Excel で読みやすいよう、エクスポートは名前で出す。</summary>
     private static T ParseEnum<T>(string s, T fallback) where T : struct, Enum
     {
         s = (s ?? "").Trim();
@@ -569,11 +673,6 @@ public static class CsvImporter
         if (!needs) return s;
         return "\"" + s.Replace("\"", "\"\"") + "\"";
     }
-    private static string JoinList(string[] arr, char sep)
-    {
-        if (arr == null) return "";
-        return string.Join(sep.ToString(), arr);
-    }
     private static string Inv(float v) => v.ToString("R", CultureInfo.InvariantCulture);
     private static string ColorToHex(Color c)
     {
@@ -583,7 +682,7 @@ public static class CsvImporter
 
     private static void WriteUtf8Bom(string path, string content)
     {
-        var enc = new UTF8Encoding(true); // emit BOM
+        var enc = new UTF8Encoding(true); // emit BOM for Excel compatibility
         File.WriteAllText(path, content, enc);
     }
 }

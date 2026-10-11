@@ -272,6 +272,9 @@ public class BattleStateMachine : MonoBehaviour
         Debug.Log($"[BattleStateMachine] actionCommandPhase: {(actionCommandPhase != null ? "OK" : "NULL")}");
         Debug.Log($"[BattleStateMachine] dodgePhase: {(dodgePhase != null ? "OK" : "NULL")}");
 
+        // キャラクター選択で選ばれたパーティをバトルに反映(スプライト/デッキ/空席)
+        ApplySelectedParty();
+
         // キャラクタースプライトの検証
         ValidateCharacterSprites();
 
@@ -300,6 +303,60 @@ public class BattleStateMachine : MonoBehaviour
         // 初期状態。
         Debug.Log($"[BattleStateMachine] 初期状態に遷移: {initialState}");
         ChangeState(initialState);
+    }
+
+    /// <summary>
+    /// キャラクター選択の結果(<see cref="GameSceneManager.selectedParty"/>)をバトルへ反映する。
+    ///  - 参加者を前詰めし、先頭から n 人のプレイヤーに選択キャラのスプライトを適用。
+    ///  - n 人目以降の playerTransforms は非表示にする(= 空席。四隅の枠は BossIntro の
+    ///    ConfigureForPlayerCount によりグレーの空枠になる。非表示オブジェクトは
+    ///    FindGameObjectsWithTag("Player") から外れるため人数も自動で n になる)。
+    ///  - デッキを選択キャラから初期化する。
+    /// キャラ選択を経ていない直接再生/デバッグ時(参加者0)は何もせず従来どおり4人固定。
+    /// </summary>
+    private void ApplySelectedParty()
+    {
+        var party = BattleParty.Resolve();
+        if (party == null)
+        {
+            Debug.Log("[BattleStateMachine] 選択パーティなし(直接再生/デバッグ) → シーン既定の4人で進行");
+            return;
+        }
+        int n = party.Length;
+        Debug.Log($"[BattleStateMachine] 選択パーティを反映: 参加{n}人");
+
+        // デッキを選択キャラで初期化
+        var deckController = GetComponent<PartyDeckController>() ?? FindObjectOfType<PartyDeckController>();
+        if (deckController != null) deckController.InitializeFromCharacters(party);
+        else Debug.LogError("[BattleStateMachine] PartyDeckController が無く、選択キャラのデッキを初期化できません");
+
+        // プレイヤーのスプライト適用 / 空席の非表示
+        var pts = cardSelectPhase != null ? cardSelectPhase.PlayerTransforms : null;
+        if (pts == null || pts.Length == 0)
+        {
+            Debug.LogError("[BattleStateMachine] CardSelectPhase.playerTransforms が未設定のため、選択キャラの見た目を反映できません");
+            return;
+        }
+        for (int i = 0; i < pts.Length; i++)
+        {
+            if (pts[i] == null) continue;
+            if (i < n)
+            {
+                var sr = pts[i].GetComponent<SpriteRenderer>();
+                if (sr == null)
+                    Debug.LogError($"[BattleStateMachine] playerTransforms[{i}] ({pts[i].name}) に SpriteRenderer が無く、キャラ画像を差し替えられません");
+                else if (party[i].characterSprite == null)
+                    Debug.LogWarning($"[BattleStateMachine] 選択キャラ {party[i].displayName} の characterSprite が未設定です(playerTransforms[{i}] は元の画像のまま)");
+                else
+                    sr.sprite = party[i].characterSprite;
+                pts[i].gameObject.SetActive(true);
+            }
+            else
+            {
+                // 空席 → 非表示
+                pts[i].gameObject.SetActive(false);
+            }
+        }
     }
 
     /// <summary>

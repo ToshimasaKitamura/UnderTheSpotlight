@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f244b77db34742a29831ee517e7edfb, type: 3}
+  m_Name: BossB_KnifeThrower
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyData
+  id: boss_b
+  displayName: "ナイフ投げ師"
+  parts:
+  - id: head
+    displayName: "頭"
+    maxHp: 7
+    zone: 0
+    destructionEffect: 1
+    hintCue: "目隠しをずらして「ヘッドショットは勘弁な…！」とにやり(頭破壊で次の攻撃が弱まる)"
+    hitboxCenter: {x: 0.5, y: 0.82}
+    hitboxSize: {x: 0.35, y: 0.28}
+  - id: arms
+    displayName: "腕"
+    maxHp: 7
+    zone: 0
+    destructionEffect: 4
+    hintCue: "両手でナイフを回し「この手が止まれば…遅くなるぜ」と挑発(腕破壊で弾速が落ちる)"
+    hitboxCenter: {x: 0.5, y: 0.5}
+    hitboxSize: {x: 0.7, y: 0.28}
+  - id: legs
+    displayName: "足"
+    maxHp: 4
+    zone: 1
+    destructionEffect: 5
+    hintCue: "ステップで間合いを詰めて「足を狙うなんて無粋だぜ」(足破壊で移動を止められる)"
+    hitboxCenter: {x: 0.5, y: 0.18}
+    hitboxSize: {x: 0.55, y: 0.24}
+  icon: {fileID: 0}
+  bossSpriteName: AllChara_136
+  danmakuBulletsPerRing: 5
+  danmakuBulletSpeed: 4.2
+  danmakuFireInterval: 0.75
+  danmakuRingAngleStepDeg: 0
+  danmakuBulletKind: 1
+  danmakuPattern: 1
+  danmakuHealEveryNShots: 0

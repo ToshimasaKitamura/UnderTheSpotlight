@@ -15,8 +15,8 @@ MonoBehaviour:
   id: stage_2
   displayName: 森の奥(連戦)
   bosses:
-  - {fileID: 11400000, guid: a1b2c3d4e5f6708192a3b4c5d6e7f809, type: 2}
-  - {fileID: 11400000, guid: a1b2c3d4e5f6708192a3b4c5d6e7f809, type: 2}
+  - {fileID: 11400000, guid: d194665028644a548377e35f2c38c250, type: 2}
+  - {fileID: 11400000, guid: 6a83e66069a34053a05c36851f2307d8, type: 2}
   baseExpReward: 8
   baseBombReward: 1
   clearBonusExp: 20

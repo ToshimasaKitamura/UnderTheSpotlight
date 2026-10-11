@@ -344,75 +344,33 @@ public class CardHandView : MonoBehaviour
 
     private void DrawCard(CardInstance card, float centerX, float centerY, float scale, bool isSelected)
     {
-        var data = card.Data;
+        if (card == null || card.Data == null) return;
+
         float w = cardSize.x * scale;
         float h = cardSize.y * scale;
         float x = centerX - w / 2f;
         float y = centerY - h / 2f;
 
-        // カード背景
-        Texture2D bgTex = isSelected ? cardSelectedBgTexture : cardBgTexture;
-
-        // 選択中は点滅効果
-        if (isSelected && !blinkOn)
+        // 選択中のスポットライト・グロー枠
+        if (isSelected)
         {
-            // 少し明るくする
-            GUI.color = new Color(1.2f, 1.2f, 1f, 1f);
+            float glowPad = 6f * scale;
+            Texture2D glowTex = cardSelectedBgTexture;
+            if (glowTex != null)
+            {
+                Color prevCol = GUI.color;
+                GUI.color = blinkOn ? new Color(1f, 0.95f, 0.4f, 0.9f) : new Color(1f, 0.85f, 0.3f, 0.5f);
+                GUI.DrawTexture(new Rect(x - glowPad, y - glowPad, w + glowPad * 2, h + glowPad * 2), glowTex, ScaleMode.StretchToFill);
+                GUI.color = prevCol;
+            }
         }
 
-        GUI.DrawTexture(new Rect(x, y, w, h), bgTex, ScaleMode.StretchToFill);
-        GUI.color = Color.white;
-
-        // カード内容の描画
-        float padding = 8f * scale;
-        float contentX = x + padding;
-        float contentY = y + padding;
-        float contentW = w - padding * 2;
-
-        // カード名(上部のカラーバンド)
-        Color cardColor = data.cardColor;
-        var nameBarTex = CreateSolidTexture(cardColor);
-        float nameBarHeight = 36f * scale;
-        GUI.DrawTexture(new Rect(contentX, contentY, contentW, nameBarHeight), nameBarTex, ScaleMode.StretchToFill);
-        Destroy(nameBarTex);
-
-        string displayName = string.IsNullOrEmpty(data.displayName) ? data.name : data.displayName;
-        int nameFontSize = Mathf.RoundToInt(14 * scale);
-        DrawTextLabel(displayName, new Rect(contentX, contentY, contentW, nameBarHeight), Color.white, nameFontSize);
-
-        // 階層ラベル
-        float tierY = contentY + nameBarHeight + 4f * scale;
-        string tierLabel = GetTierLabel(data.tier);
-        string tierText = card.UpgradeLevel > 0 ? $"[{tierLabel}] *{card.UpgradeLevel}" : $"[{tierLabel}]";
-        int tierFontSize = Mathf.RoundToInt(10 * scale);
-        DrawTextLabel(tierText, new Rect(contentX, tierY, contentW, 20f * scale), cardColor, tierFontSize);
-
-        // 区切り線
-        float dividerY = tierY + 22f * scale;
-        var dividerTex = GetTextTexture("--------", new Color(1f, 1f, 1f, 0.4f), 2);
-        if (dividerTex != null)
+        // TCGデザインカードテクスチャの描画
+        Texture2D cardTex = CardVisualGenerator.CreateCardTexture(card, isSelected);
+        if (cardTex != null)
         {
-            float divX = contentX + (contentW - dividerTex.width) / 2f;
-            GUI.DrawTexture(new Rect(divX, dividerY, dividerTex.width, dividerTex.height), dividerTex);
+            GUI.DrawTexture(new Rect(x, y, w, h), cardTex, ScaleMode.StretchToFill);
         }
-
-        // 説明文
-        float descY = dividerY + 16f * scale;
-        string desc = data.description ?? "";
-        float descHeight = h - (descY - y) - 50f * scale;
-        int descFontSize = Mathf.RoundToInt(9 * scale);
-        EnsureCardTextStyles();
-        cardDescStyle.fontSize = descFontSize;
-        cardDescStyle.normal.textColor = new Color(0.9f, 0.92f, 1f, 1f);
-        GUI.Label(new Rect(contentX, descY, contentW, descHeight), desc, cardDescStyle);
-
-        // 難易度(下部)
-        float diffY = y + h - 36f * scale;
-        int eff = card.EffectiveDifficulty;
-        Color diffColor = (eff >= 0) ? new Color(1f, 0.6f, 0.25f, 1f) : new Color(0.4f, 0.85f, 1f, 1f);
-        string diffText = (eff >= 0) ? $"Diff +{eff}" : $"Diff {eff}";
-        int diffFontSize = Mathf.RoundToInt(12 * scale);
-        DrawTextLabel(diffText, new Rect(contentX, diffY, contentW, 30f * scale), diffColor, diffFontSize);
     }
 
     private void DrawMultilineText(string text, float x, float startY, float maxWidth, float scale, Color color)

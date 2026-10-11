@@ -12,6 +12,14 @@ public class DanmakuManager : MonoBehaviour
     [Tooltip("true で fieldBounds による弾のクリッピングを有効化。")]
     public bool useFieldBounds = false;
 
+    [Tooltip("回復弾(Heal)命中時に回復させるボスの状態。未設定時はシーン内を検索。")]
+    public EnemyRuntimeState enemyState;
+
+    // 弾種ごとの色(基本は白黒。用途で見た目を変える)。仕様: docs/Design/Danmaku_Design.md
+    private static readonly Color NormalColor = Color.white;
+    private static readonly Color FastColor = new Color(0.60f, 0.85f, 1f, 1f);   // 速弾(クナイ)=淡い青
+    private static readonly Color HealColor = new Color(0.40f, 0.851f, 0.498f, 1f); // 回復弾=緑(Success)
+
     void Update()
     {
         var targets = FindObjectsOfType<PlayerOnFieldHittable>();
@@ -39,6 +47,14 @@ public class DanmakuManager : MonoBehaviour
                 float r = b.radius + t.radius;
                 if (diff.sqrMagnitude < r * r)
                 {
+                    if (b.kind == BulletKind.Heal)
+                    {
+                        // 回復弾: 自機ダメージ無し。代わりにボスが自己回復する(避けるべき弾)。
+                        ApplyBossHeal(b.healAmount);
+                        Destroy(b.gameObject);
+                        bullets.Remove(b);
+                        break; // 他の自機(交代中は1体だが将来の多体)への二重命中を防ぐ
+                    }
                     t.NotifyHit();
                     if (b != null) Destroy(b.gameObject);
                     bullets.Remove(b);
@@ -46,6 +62,18 @@ public class DanmakuManager : MonoBehaviour
                 }
             }
         }
+    }
+
+    private void ApplyBossHeal(int amount)
+    {
+        if (amount <= 0) return;
+        if (enemyState == null) enemyState = FindObjectOfType<EnemyRuntimeState>();
+        if (enemyState == null)
+        {
+            Debug.LogWarning("[DanmakuManager] 回復弾が命中しましたが EnemyRuntimeState が見つからず、ボスを回復できません。");
+            return;
+        }
+        enemyState.HealAny(amount);
     }
 
     private bool IsInsideField2D(Vector3 p)
@@ -56,7 +84,14 @@ public class DanmakuManager : MonoBehaviour
 
     private bool warnedNoBulletPrefab;
 
+    /// <summary>通常弾(白黒)を生成する。弾種を指定したい場合は overload を使う。</summary>
     public GameObject SpawnBullet(Vector3 pos, Vector3 vel)
+    {
+        return SpawnBullet(pos, vel, BulletKind.Normal);
+    }
+
+    /// <summary>弾種を指定して弾を生成する。</summary>
+    public GameObject SpawnBullet(Vector3 pos, Vector3 vel, BulletKind kind)
     {
         if (bulletPrefab == null)
         {
@@ -72,8 +107,23 @@ public class DanmakuManager : MonoBehaviour
         var b = go.GetComponent<Bullet>();
         if (b == null) b = go.AddComponent<Bullet>();
         b.velocity = vel;
+        b.kind = kind;
+        ApplyKindVisual(go, kind);
         bullets.Add(b);
         return go;
+    }
+
+    /// <summary>弾種に応じて弾の見た目(色)を設定する。</summary>
+    private void ApplyKindVisual(GameObject bulletGo, BulletKind kind)
+    {
+        var sr = bulletGo.GetComponentInChildren<SpriteRenderer>();
+        if (sr == null) return;
+        switch (kind)
+        {
+            case BulletKind.Fast: sr.color = FastColor; break;
+            case BulletKind.Heal: sr.color = HealColor; break;
+            default: sr.color = NormalColor; break;
+        }
     }
 
     public void ClearAllBullets()
