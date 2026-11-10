@@ -30,6 +30,35 @@ public class MicroGameRegistry
         return r;
     }
 
+    /// <summary>
+    /// グループ型(全員で1回・リレー式)アクションコマンドの登録簿。ActionCommandPhase はここからランダムに選ぶ。
+    /// 増やすときは GroupRelayMicroGame を継承したクラスを作り、ここに1行足す。
+    /// 並び順は ActionCommandPhase.debugForceGroupGame の番号と対応する(0 始まり)。
+    /// </summary>
+    public static MicroGameRegistry CreateGroupDefault()
+    {
+        var r = new MicroGameRegistry();
+        r.Register(() => new GroupMashMicroGame());      // 0: れんだ！
+        r.Register(() => new GroupTimingMicroGame());    // 1: タイミング！
+        r.Register(() => new GroupHoldMicroGame());      // 2: ためて はなせ！
+        r.Register(() => new GroupSequenceMicroGame());  // 3: じゅんばんに！
+        return r;
+    }
+
+    /// <summary>index 番目のミニゲームを生成する。範囲外はエラーを出して null。</summary>
+    public IMicroGame Create(int index, out string displayName)
+    {
+        if (index < 0 || index >= factories.Count)
+        {
+            UnityEngine.Debug.LogError($"[MicroGameRegistry] index={index} は範囲外です(登録数 {factories.Count})。");
+            displayName = "";
+            return null;
+        }
+        var g = factories[index]();
+        displayName = g.DisplayName;
+        return g;
+    }
+
     public IMicroGame CreateRandom(System.Random rng, out string displayName)
     {
         if (factories.Count == 0) { displayName = ""; return null; }

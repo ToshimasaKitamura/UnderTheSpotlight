@@ -18,7 +18,8 @@
 - 旧の Mash/Timing/Sequence/Hold は単独プレイ実装としてコードベースに残るが、
   `RunSequence` からは呼ばれない(将来「グループ式の Timing」等を追加する際の参考)。
 - `MicroGameContext.OnPlayerAttack(playerIndex)` コールバックで個別命中を通知する仕組みを導入。
-- 現在のグループ式実装は `GroupButtonMicroGame`(1人1キー: P1=1, P2=2, P3=3, P4=4)。
+- 現在のグループ式実装は **リレー式 4種**(下の「グループ型アクションコマンド一覧」)。毎回ランダムに1つ選ばれる。
+  旧 `GroupButtonMicroGame`(1人1キー: P1=1, P2=2, P3=3, P4=4)はコードに残るが選出対象外。
 
 ---
 
@@ -94,6 +95,25 @@ Enter
 
 ---
 
+## 4b. グループ型アクションコマンド一覧(現行・ランダム選出)
+
+共通の進行は `GroupRelayMicroGame`(基底クラス)が持つ。
+1本のバーを参加人数ぶんの領域に分け、**P1→P2→…の順に手番プレイヤーが自分の領域で操作**する。
+手番で成功(HIT)したら即 `OnPlayerAttack` → ダメージ演出。失敗/時間切れは不発(MISS)。
+光が次の領域へ移って次の手番になる。1人あたりの制限時間は `timeLimit`(下限3秒、連打のみ下限4秒)。
+
+| # | 名前 | クラス | 操作 | 成功条件 | 難易度ノブの効き方 |
+|---|---|---|---|---|---|
+| 0 | れんだ！ | `GroupMashMicroGame` | SPACE 連打 | 領域ゲージを満タンにする | speedMul: 1押しの増加が減り減衰が増える |
+| 1 | タイミング！ | `GroupTimingMicroGame` | SPACE 1回 | 往復するマーカーを光る「ねらい枠」で止める | speedMul: マーカー速度↑・枠が狭く / rangeScale: 枠の広さ / interference: マーカーが点滅して見えにくい |
+| 2 | ためて はなせ！ | `GroupHoldMicroGame` | SPACE 長押し→離す | 離した時のゲージが「ねらい帯」の中。満タンまで溜めると破裂で不発 | speedMul: 溜まる速さ / rangeScale: 帯の広さ |
+| 3 | じゅんばんに！ | `GroupSequenceMicroGame` | 矢印キー or WASD | 表示された矢印を左から順に全部入力。1回でも間違えたら不発 | buttonCount: 矢印の数(2〜6) / interference≥0.5: 2つ先以降が「？」で隠れる |
+
+- 選出: `MicroGameRegistry.CreateGroupDefault()` からランダム。**増やすときは `GroupRelayMicroGame` を継承し、ここに1行登録する**(派生は `BuildZone` と `TickTurn` を書くだけ)。
+- 動作確認: `ActionCommandPhase.debugForceGroupGame` に上表の番号を入れると固定。-1 でランダム。
+- タイミング/ためて/じゅんばんに は手番終了時に領域の上へ「HIT!/MISS」を表示する(れんだは塗りで分かるため出さない)。
+- 押しっぱなし対策: ためて はなせ！ は手番中に新しく押した時から溜め始める(前の手番から押しっぱなしでも溜まらない)。
+
 ## 5. 確定事項 / 実装状況
 
 - ミニゲーム: 拡張可能フレーム + 初期4種実装(連打/タイミング/順番入力/ホールド)。`MicroGameRegistry.Register` 追加で増種
@@ -113,11 +133,16 @@ Enter
 ```
 AcUi.cs                共通 UI(Legacy Text/Image, OS和文フォント)
 IMicroGame.cs          IMicroGame + MicroGameContext(難易度ノブ)
+GroupRelayMicroGame.cs     グループ型(リレー式)の共通基底: 領域分割・交代の光・タイマー・HIT/MISS
+GroupMashMicroGame.cs      れんだ！
+GroupTimingMicroGame.cs    タイミング！
+GroupHoldMicroGame.cs      ためて はなせ！
+GroupSequenceMicroGame.cs  じゅんばんに！
 MashMicroGame.cs       連打
 TimingMicroGame.cs     タイミング
 SequenceMicroGame.cs   順番入力
 HoldMicroGame.cs       ホールド
-MicroGameRegistry.cs   登録簿(ランダム選出)
+MicroGameRegistry.cs   登録簿(ランダム選出)。グループ型は CreateGroupDefault()
 ActionCommandModifiers.cs  CardSelect→ノブ算出(雛形)
 MiniGameStartView.cs   MiniGameStart + ホットシート決定
 ActionCommandPhase.cs  統制(IBattlePhase, BlocksDebugAdvance=true)

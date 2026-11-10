@@ -29,6 +29,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     public float interRoundDelay = 0.7f;
     [Tooltip("成否表示の秒数。")]
     public float resultFlashDuration = 0.9f;
+    [Tooltip("動作確認用: 0以上でアクションコマンドを固定(0=れんだ 1=タイミング 2=ためてはなせ 3=じゅんばんに)。-1 でランダム。")]
+    public int debugForceGroupGame = -1;
 
     [Header("難易度ノブ雛形(Inspector調整)")]
     public float baseTimeLimit = 3.5f;        // 4.5f → 3.5f (短縮)
@@ -179,10 +181,20 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         var selections = cardSelectPhase != null ? cardSelectPhase.Selections : null;
         var mods = new ActionCommandModifiers(selections);
 
-        // 【仮】アクションコマンドは「4人分の領域に分かれた大ゲージをスペース連打」(グループ型)に固定。
+        // アクションコマンドはグループ型(全員で1回・リレー式)の登録簿からランダムに選ぶ。
+        // debugForceGroupGame >= 0 のときはその番号に固定(動作確認用)。
+        var groupRegistry = MicroGameRegistry.CreateGroupDefault();
         string chosenName;
-        IMicroGame game = new GroupMashMicroGame();
-        chosenName = game.DisplayName;
+        IMicroGame game = (debugForceGroupGame >= 0)
+            ? groupRegistry.Create(debugForceGroupGame, out chosenName)
+            : groupRegistry.CreateRandom(rng, out chosenName);
+        if (game == null)
+        {
+            Debug.LogError($"[ActionCommandPhase] アクションコマンドを生成できませんでした(debugForceGroupGame={debugForceGroupGame}, 登録数={groupRegistry.Count})。BattleResult へ進みます。");
+            routine = null;
+            if (stateMachine != null) stateMachine.ChangeState(BattleStateMachine.State.BattleResult);
+            yield break;
+        }
 
         // MiniGameStart 画面は出さず、そのままミニゲームを開始する。
         // (CardSelect のカーソル準備完了と二重になり、一瞬表示が出てしまうため廃止)
@@ -211,10 +223,10 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
         bannerText = chosenName;
 
-        // グループ参加型(GroupButton)か、個別順次参加型かを判定
-        // 現状 GroupButtonMicroGame 以外は 1人用として実装されているため、
+        // グループ参加型(GroupButton / GroupRelay 派生)か、個別順次参加型かを判定
+        // それ以外(Mash/Timing 等の旧1人用)は
         // 1人用の場合は人数分ループさせる(本来のパーティゲームの挙動)。
-        bool isGroupGame = (game is GroupButtonMicroGame) || (game is GroupMashMicroGame);
+        bool isGroupGame = (game is GroupButtonMicroGame) || (game is GroupRelayMicroGame);
 
         // ボスを倒した瞬間にアクションコマンドを止めるためのフラグ
         bool enemyDefeated = false;
