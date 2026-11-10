@@ -3,67 +3,77 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// グループ型アクションコマンド「ためて はなせ！」。
-/// 手番プレイヤーが SPACE を長押しするとゲージが溜まり、離した瞬間のゲージが「ねらい帯」の中なら命中。
-/// 帯の手前で離す/溜めすぎて満タン(破裂)/時間切れ は不発。
-/// 前の手番から SPACE を押しっぱなしでも溜まらないよう、手番中に新しく押した時から溜め始める。
-/// 難易度: speedMul=溜まる速さ / rangeScale=ねらい帯の広さ。
+/// アクションコマンド「ためて はなせ！」(三角のパワー)。
+/// SPACE を長押しすると大きな三角が下から色で満ちていく。離した時の高さが白い帯の中なら命中。
+/// 帯の手前で離す/てっぺんまで溜めて破裂/時間切れ は不発。
+/// 前の手番から押しっぱなしでも溜まらないよう、プレイ中に新しく押した時から溜め始める。
+/// 難易度: speedMul=溜まる速さ / rangeScale=帯の広さ。
 /// </summary>
 public class GroupHoldMicroGame : GroupRelayMicroGame
 {
     public override string DisplayName => "ためて はなせ！";
-    protected override string PromptText => "SPACE ながおしして はなせ！";
+    protected override string PromptText => "SPACE ながおしで ためて おびで はなせ！";
 
-    private RectTransform[] fillRt;
-    private Image[] fillImg;
-    private Image[] bandImg;
-    private float[] bandCenter;   // ねらい帯の中心(0..1)
-    private float bandHalf;
+    private const float TriW = 250f;
+    private const float TriH = 230f;
+    private const float TriY = -6f;        // プレイエリア内での三角の中心 y
+
+    private Image triBack;
+    private Image triFill;
+    private Image band;
+    private Image bandTop;
+    private Image bandBottom;
+
     private float chargePerSec;
+    private float bandHalf;
+    private System.Random rng;
 
+    private float bandCenter;   // 0..1(三角の高さに対する割合)
     private float charge;
     private bool charging;
 
     protected override void OnSetup(MicroGameContext c)
     {
-        chargePerSec = 0.55f * Mathf.Max(0.5f, c.speedMul);
+        // 下限0.8: 最遅でも帯の上端まで約2.1秒で届き、制限時間(3秒以上)に収まる
+        chargePerSec = 0.55f * Mathf.Max(0.8f, c.speedMul);
         bandHalf = Mathf.Clamp(0.08f * c.rangeScale, 0.035f, 0.16f);
-
-        fillRt = new RectTransform[PlayerCount];
-        fillImg = new Image[PlayerCount];
-        bandImg = new Image[PlayerCount];
-        bandCenter = new float[PlayerCount];
-        var rng = c.rng ?? new System.Random();
-        for (int i = 0; i < PlayerCount; i++)
-        {
-            // 帯は 55%〜92% の間。満タン(破裂)と被らないよう上端に余白を取る
-            bandCenter[i] = Mathf.Lerp(0.55f + bandHalf, 0.92f - bandHalf, (float)rng.NextDouble());
-        }
+        rng = c.rng ?? new System.Random();
     }
 
-    protected override void BuildZone(int i, RectTransform zone, Color col)
+    protected override void BuildPlay(RectTransform play)
     {
-        float w = ZoneInnerW;
-        float h = ZoneInnerH;
+        triBack = Shape(play, "TriBack", AcShapes.Triangle(), Color.white, new Vector2(0f, TriY), new Vector2(TriW, TriH));
+        triFill = Shape(play, "TriFill", AcShapes.Triangle(), Color.white, new Vector2(0f, TriY), new Vector2(TriW, TriH));
+        triFill.type = Image.Type.Filled;
+        triFill.fillMethod = Image.FillMethod.Vertical;
+        triFill.fillOrigin = (int)Image.OriginVertical.Bottom;
+        triFill.fillAmount = 0f;
 
-        fillRt[i] = CreateLeftFill(zone, $"Fill{i}", col, h - 4f);
-        fillImg[i] = fillRt[i].GetComponent<Image>();
-
-        // ねらい帯(白い半透明の帯＋両端の線)。塗りより手前に描く
-        var band = AcUi.Image(zone, $"Band{i}", new Color(1f, 1f, 1f, 0.28f));
-        PlaceInZone(band.rectTransform, bandCenter[i] * w, 0f, bandHalf * 2f * w, h);
-        bandImg[i] = band;
-        var l = AcUi.Image(zone, $"BandL{i}", new Color(1f, 1f, 1f, 0.95f));
-        PlaceInZone(l.rectTransform, (bandCenter[i] - bandHalf) * w, 0f, 3f, h + 6f);
-        var r = AcUi.Image(zone, $"BandR{i}", new Color(1f, 1f, 1f, 0.95f));
-        PlaceInZone(r.rectTransform, (bandCenter[i] + bandHalf) * w, 0f, 3f, h + 6f);
+        band = AcUi.Image(play, "Band", WithAlpha(Color.white, 0.22f));
+        bandTop = AcUi.Image(play, "BandTop", Color.white);
+        bandBottom = AcUi.Image(play, "BandBottom", Color.white);
     }
 
-    protected override void OnTurnStart(int i)
+    protected override void OnTurnStart(int i, Color col)
     {
         charge = 0f;
         charging = false;
-        UpdateFill(i);
+        // 帯は 55%〜92% の間。てっぺん(破裂)と被らないよう上端に余白を取る
+        bandCenter = Mathf.Lerp(0.55f + bandHalf, 0.92f - bandHalf, (float)rng.NextDouble());
+
+        triBack.color = Dim(col, 0.28f);
+        triFill.color = col;
+        triFill.fillAmount = 0f;
+
+        float lineW = TriW + 60f;
+        float yLo = HeightToY(bandCenter - bandHalf);
+        float yHi = HeightToY(bandCenter + bandHalf);
+        PlaceCenter(band.rectTransform, new Vector2(0f, (yLo + yHi) * 0.5f), new Vector2(lineW, yHi - yLo));
+        PlaceCenter(bandTop.rectTransform, new Vector2(0f, yHi), new Vector2(lineW, 4f));
+        PlaceCenter(bandBottom.rectTransform, new Vector2(0f, yLo), new Vector2(lineW, 4f));
+        band.color = WithAlpha(Color.white, 0.22f);
+        bandTop.color = Color.white;
+        bandBottom.color = Color.white;
     }
 
     protected override TurnResult TickTurn(int i, float dt)
@@ -82,36 +92,33 @@ public class GroupHoldMicroGame : GroupRelayMicroGame
             charge += chargePerSec * dt;
             if (charge >= 1f)
             {
-                charge = 1f;          // 溜めすぎ=破裂
-                UpdateFill(i);
+                charge = 1f;           // 溜めすぎ=破裂
+                triFill.fillAmount = 1f;
                 return TurnResult.Miss;
             }
-            UpdateFill(i);
+            triFill.fillAmount = charge;
             return TurnResult.Continue;
         }
 
         // 離した
-        bool hit = Mathf.Abs(charge - bandCenter[i]) <= bandHalf;
+        bool hit = Mathf.Abs(charge - bandCenter) <= bandHalf;
         return hit ? TurnResult.Hit : TurnResult.Miss;
     }
 
     protected override void OnTurnEnd(int i, bool hit)
     {
-        if (fillImg[i] == null) return;
         if (hit)
         {
-            if (bandImg[i] != null) bandImg[i].color = new Color(1f, 0.92f, 0.35f, 0.6f);
+            band.color = WithAlpha(HitColor, 0.45f);
+            bandTop.color = HitColor;
+            bandBottom.color = HitColor;
         }
         else
         {
-            var c = fillImg[i].color;
-            fillImg[i].color = new Color(c.r * 0.45f, c.g * 0.45f, c.b * 0.45f, 1f);
+            triFill.color = Dim(triFill.color, 0.45f);
         }
     }
 
-    private void UpdateFill(int i)
-    {
-        if (fillRt[i] == null) return;
-        fillRt[i].sizeDelta = new Vector2(ZoneInnerW * charge, fillRt[i].sizeDelta.y);
-    }
+    // 三角の高さの割合(0=底辺, 1=頂点) → プレイエリア内の y
+    private static float HeightToY(float h) => TriY - TriH / 2f + TriH * h;
 }

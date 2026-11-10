@@ -18,7 +18,7 @@
 - 旧の Mash/Timing/Sequence/Hold は単独プレイ実装としてコードベースに残るが、
   `RunSequence` からは呼ばれない(将来「グループ式の Timing」等を追加する際の参考)。
 - `MicroGameContext.OnPlayerAttack(playerIndex)` コールバックで個別命中を通知する仕組みを導入。
-- 現在のグループ式実装は **リレー式 4種**(下の「グループ型アクションコマンド一覧」)。毎回ランダムに1つ選ばれる。
+- 現在のグループ式実装は **リレー式 4種**(下の「グループ型アクションコマンド一覧」)。フェーズのたびに順番に1つ選ばれる。
   旧 `GroupButtonMicroGame`(1人1キー: P1=1, P2=2, P3=3, P4=4)はコードに残るが選出対象外。
 
 ---
@@ -27,7 +27,8 @@
 
 - カード選択後 → ActionCommand → 終わったら弾幕回避フェーズ
 - **全員が決定ボタンを押すとミニゲーム開始**
-- ミニゲームの選出は**ランダム**。選ばれた物の名前を「MiniGameStart」表示に出す
+- ミニゲームは**順番に**出る(2026-11 ユーザー指定で変更。旧仕様はランダム)。選ばれた物の名前はフィールドのヘッダーに出す
+- 4人でも1つ1つが小さくならないよう、**1人ずつ順番に、統一UIのフィールド全体を使って**遊ぶ。横ゲージに限らず丸・三角などの図形で表現する
 - アクションコマンドは**どんどん難しくなる**
 - カード効果で上昇する要素: **上り幅(ramp) / ボタン数 / 担当範囲 / 視覚妨害 / 速度** など
 - カード効果には**個人に降りかかるデメリット**(例「青の範囲の速度が上がる」)と**全体デメリット**がある
@@ -40,10 +41,10 @@
 
 | クラス | 種別 | 責務 |
 |---|---|---|
-| `ActionCommandPhase` | MonoBehaviour(IBattlePhase) | 全体統制: 入力受付ゲート→ランダム選出→ラウンド進行(難化)→集計→Dodge遷移 |
+| `ActionCommandPhase` | MonoBehaviour(IBattlePhase) | 全体統制: 入力受付ゲート→順番に選出→ラウンド進行(難化)→集計→Dodge遷移 |
 | `IMicroGame` | interface | `Begin(ctx)` / `Tick()->bool(done)` / `Success` 。1ミニゲーム |
 | `MicroGameContext` | class | 難易度パラメータ(speed/buttonCount/range/interference/ramp)+ playerIndex + 乱数 |
-| `MicroGameRegistry` | クラス/SO | 利用可能ミニゲーム一覧 + 表示名。ランダム選出元 |
+| `MicroGameRegistry` | クラス/SO | 利用可能ミニゲーム一覧 + 表示名。選出元(グループ型は登録順に巡回) |
 | `ActionCommandModifiers` | class | CardSelect.Selections を集計し各ノブ(速度/数/範囲/妨害/ramp)を算出。個人別/全体別 |
 | `MiniGameStartView` | MonoBehaviour(runtime UI) | 「MiniGameStart」+ 選ばれたゲーム名 + 各プレイヤーの決定状況、全員確定で開始 |
 | `MicroGameResultTally` | class | 成功数/デメリット数を集計。Dodge の SpecialSuccessScaling・称賛演出に供給 |
@@ -60,7 +61,7 @@
 ```
 Enter
  └ CardSelect.Selections 取得 → ActionCommandModifiers 構築
- └ MiniGameRegistry からランダム選出 → MiniGameStartView に名前表示
+ └ MiniGameRegistry から順番に選出 → フィールドのヘッダーに名前表示
  └ 全員が決定ボタン → ラウンド開始
 ラウンド i (i=0,1,2,...):
  └ MicroGameContext 構築(基本難度 + ramp*i + カード効果ノブ)
@@ -95,24 +96,37 @@ Enter
 
 ---
 
-## 4b. グループ型アクションコマンド一覧(現行・ランダム選出)
+## 4b. グループ型アクションコマンド一覧(現行・順番に巡回)
 
-共通の進行は `GroupRelayMicroGame`(基底クラス)が持つ。
-1本のバーを参加人数ぶんの領域に分け、**P1→P2→…の順に手番プレイヤーが自分の領域で操作**する。
-手番で成功(HIT)したら即 `OnPlayerAttack` → ダメージ演出。失敗/時間切れは不発(MISS)。
-光が次の領域へ移って次の手番になる。1人あたりの制限時間は `timeLimit`(下限3秒、連打のみ下限4秒)。
+### 共通フィールド(統一UI)
+共通の進行と画面は `GroupRelayMicroGame`(基底クラス)が持つ。画面中央やや下に**統一デザインのフィールドを1枚**出し、
+**P1→P2→…の順に1人ずつ、フィールド全体を使って**遊ぶ(4人でも1つ1つが小さくならないよう、画面分割はしない)。
 
-| # | 名前 | クラス | 操作 | 成功条件 | 難易度ノブの効き方 |
-|---|---|---|---|---|---|
-| 0 | れんだ！ | `GroupMashMicroGame` | SPACE 連打 | 領域ゲージを満タンにする | speedMul: 1押しの増加が減り減衰が増える |
-| 1 | タイミング！ | `GroupTimingMicroGame` | SPACE 1回 | 往復するマーカーを光る「ねらい枠」で止める | speedMul: マーカー速度↑・枠が狭く / rangeScale: 枠の広さ / interference: マーカーが点滅して見えにくい |
-| 2 | ためて はなせ！ | `GroupHoldMicroGame` | SPACE 長押し→離す | 離した時のゲージが「ねらい帯」の中。満タンまで溜めると破裂で不発 | speedMul: 溜まる速さ / rangeScale: 帯の広さ |
-| 3 | じゅんばんに！ | `GroupSequenceMicroGame` | 矢印キー or WASD | 表示された矢印を左から順に全部入力。1回でも間違えたら不発 | buttonCount: 矢印の数(2〜6) / interference≥0.5: 2つ先以降が「？」で隠れる |
+```
+┌ ヘッダー : [P1] ゲーム名 / 操作説明 ───────────┐   枠の色 = 手番プレイヤー色
+│ プレイエリア : 各ミニゲームが丸・リング・三角で描く │
+└ フッター : 残り時間バー ・ 手番チップ P1 P2 P3 P4 ┘   チップ: 手番=白リング / HIT=金 / MISS=灰
+```
 
-- 選出: `MicroGameRegistry.CreateGroupDefault()` からランダム。**増やすときは `GroupRelayMicroGame` を継承し、ここに1行登録する**(派生は `BuildZone` と `TickTurn` を書くだけ)。
-- 動作確認: `ActionCommandPhase.debugForceGroupGame` に上表の番号を入れると固定。-1 でランダム。
-- タイミング/ためて/じゅんばんに は手番終了時に領域の上へ「HIT!/MISS」を表示する(れんだは塗りで分かるため出さない)。
-- 押しっぱなし対策: ためて はなせ！ は手番中に新しく押した時から溜め始める(前の手番から押しっぱなしでも溜まらない)。
+- 1手番の流れ: 準備「P? の ばん！」(0.6秒・入力なし) → プレイ → 結果「HIT!/MISS」(0.65秒) → 次のプレイヤー
+- HIT した瞬間に `OnPlayerAttack` → ダメージ光(始点=プレイエリア中央)＋部位ダメージ
+- 1人あたりの制限時間は `timeLimit`(下限3秒、れんだのみ下限4秒)。時間切れは MISS
+- 図形スプライトは `AcShapes`(丸/リング/三角/四角)が実行時生成。外部画像・フォントの記号に依存しない
+
+### 種類
+| # | 名前 | クラス | 図形 | 操作 | 成功条件 | 難易度ノブの効き方 |
+|---|---|---|---|---|---|---|
+| 0 | れんだ！ | `GroupMashMicroGame` | 丸(風船)＋リング | SPACE 連打 | 風船を外側のリングの大きさまでふくらませる(止めるとしぼむ) | speedMul: 1押しの量が減り、しぼむのが速くなる |
+| 1 | タイミング！ | `GroupTimingMicroGame` | ちぢむリング＋丸い的 | SPACE 1回 | ちぢむリングが的の縁に重なった瞬間に押す。通り過ぎたら不発 | speedMul: ちぢむ速さ / rangeScale: 許容幅 / interference: リングが点滅 |
+| 2 | ためて はなせ！ | `GroupHoldMicroGame` | 三角(下から満ちる)＋白い帯 | SPACE 長押し→離す | 離した高さが白い帯の中。てっぺんまで溜めると破裂で不発 | speedMul: 溜まる速さ / rangeScale: 帯の広さ |
+| 3 | じゅんばんに！ | `GroupSequenceMicroGame` | 矢印パネル(三角を回転) | 矢印キー or WASD | 左から順に全部入力。1回でも違えば不発 | buttonCount: パネル数(2〜6) / interference≥0.5: 2つ先以降が「?」 |
+
+- 選出: **順番に巡回**(れんだ→タイミング→ためて はなせ→じゅんばんに→れんだ…)。アクションコマンドフェーズのたびに次へ進む。
+  巡回位置は `ActionCommandPhase` が保持し、バトルシーンを読み込み直すと先頭(れんだ)から。
+- 増やすとき: `GroupRelayMicroGame` を継承して `BuildPlay`(中身を1回作る)/`OnTurnStart`(手番ごとの初期化)/`TickTurn`(判定) を書き、
+  `MicroGameRegistry.CreateGroupDefault()` に1行登録する(登録順＝巡回順)。
+- 動作確認: `ActionCommandPhase.debugForceGroupGame` に上表の番号を入れると固定。-1 で順番に巡回。
+- 押しっぱなし対策: ためて はなせ！ はプレイ中に新しく押した時から溜め始める。タイミング！ はリング出現前に押すと「早すぎ」で不発。
 
 ## 5. 確定事項 / 実装状況
 
@@ -133,7 +147,8 @@ Enter
 ```
 AcUi.cs                共通 UI(Legacy Text/Image, OS和文フォント)
 IMicroGame.cs          IMicroGame + MicroGameContext(難易度ノブ)
-GroupRelayMicroGame.cs     グループ型(リレー式)の共通基底: 領域分割・交代の光・タイマー・HIT/MISS
+GroupRelayMicroGame.cs     グループ型(リレー式)の共通基底: 統一フィールドUI・手番進行・タイマー・HIT/MISS
+AcShapes.cs                図形スプライト(丸/リング/三角/四角)の実行時生成
 GroupMashMicroGame.cs      れんだ！
 GroupTimingMicroGame.cs    タイミング！
 GroupHoldMicroGame.cs      ためて はなせ！
@@ -142,7 +157,7 @@ MashMicroGame.cs       連打
 TimingMicroGame.cs     タイミング
 SequenceMicroGame.cs   順番入力
 HoldMicroGame.cs       ホールド
-MicroGameRegistry.cs   登録簿(ランダム選出)。グループ型は CreateGroupDefault()
+MicroGameRegistry.cs   登録簿。グループ型は CreateGroupDefault()(登録順=巡回順)
 ActionCommandModifiers.cs  CardSelect→ノブ算出(雛形)
 MiniGameStartView.cs   MiniGameStart + ホットシート決定
 ActionCommandPhase.cs  統制(IBattlePhase, BlocksDebugAdvance=true)

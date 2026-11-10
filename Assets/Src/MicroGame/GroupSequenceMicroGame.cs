@@ -3,60 +3,78 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// グループ型アクションコマンド「じゅんばんに！」。
-/// 手番プレイヤーの領域に矢印が並ぶ。矢印キー(または WASD)で左から順に入力し、全部合えば命中。
-/// 1回でも違うキーを押したら不発。時間切れも不発。
-/// 難易度: buttonCount=矢印の数(2〜6) / interference=次以降の矢印を隠す(見えにくさ)。
+/// アクションコマンド「じゅんばんに！」(矢印パネル)。
+/// フィールドに大きな矢印パネルが並ぶ。矢印キー(または WASD)で左から順に入力し、全部合えば命中。
+/// 1回でも違う方向を押したら不発。時間切れも不発。
+/// 矢印は三角の図形を回転させて描く(フォントの矢印グリフに依存しない)。
+/// 難易度: buttonCount=パネル数(2〜6) / interference≥0.5=2つ先以降が「?」で隠れる。
 /// </summary>
 public class GroupSequenceMicroGame : GroupRelayMicroGame
 {
     public override string DisplayName => "じゅんばんに！";
-    protected override string PromptText => "やじるしを じゅんばんに！";
+    protected override string PromptText => "やじるしキー(WASD)で じゅんばんに！";
 
     private const int MinLen = 2;
     private const int MaxLen = 6;
-    private static readonly string[] ArrowGlyph = { "↑", "↓", "←", "→" };
+    private const float MaxCell = 96f;
+    private const float Gap = 12f;
+    // 0=上 1=下 2=左 3=右 の向きにする回転(三角は上向き。Unity の z 回転は反時計回り)
+    private static readonly float[] DirAngle = { 0f, 180f, 90f, -90f };
 
-    private int[][] sequence;     // [player][step] = 0..3 (上下左右)
-    private Text[][] arrowText;
-    private int step;
+    private int len;
+    private float cell;
+    private int[][] sequence;      // [player][step]
+    private Image[] panels;
+    private Image[] arrows;
+    private Text[] hidden;
     private float interference;
+
+    private int step;
+    private Color col;
 
     protected override void OnSetup(MicroGameContext c)
     {
-        int len = Mathf.Clamp(c.buttonCount, MinLen, MaxLen);
+        len = Mathf.Clamp(c.buttonCount, MinLen, MaxLen);
         interference = Mathf.Clamp01(c.interference);
-        var rng = c.rng ?? new System.Random();
+        cell = Mathf.Min(MaxCell, (PlayW - 40f - Gap * (len - 1)) / len);
 
+        var rng = c.rng ?? new System.Random();
         sequence = new int[PlayerCount][];
-        arrowText = new Text[PlayerCount][];
         for (int i = 0; i < PlayerCount; i++)
         {
             sequence[i] = new int[len];
             for (int s = 0; s < len; s++) sequence[i][s] = rng.Next(4);
-            arrowText[i] = new Text[len];
         }
     }
 
-    protected override void BuildZone(int i, RectTransform zone, Color col)
+    protected override void BuildPlay(RectTransform play)
     {
-        int len = sequence[i].Length;
-        float cell = ZoneInnerW / len;
-        int fontSize = Mathf.Clamp(Mathf.RoundToInt(cell * 0.75f), 18, 44);
+        panels = new Image[len];
+        arrows = new Image[len];
+        hidden = new Text[len];
+        float totalW = len * cell + (len - 1) * Gap;
         for (int s = 0; s < len; s++)
         {
-            var t = AcUi.Label(zone, $"Arrow{i}_{s}", fontSize, Color.white, TextAnchor.MiddleCenter, true, true);
-            t.text = ArrowGlyph[sequence[i][s]];
-            PlaceInZone(t.rectTransform, cell * (s + 0.5f), 0f, cell, ZoneInnerH);
-            arrowText[i][s] = t;
+            float x = -totalW / 2f + cell / 2f + s * (cell + Gap);
+            panels[s] = AcUi.Image(play, $"Panel{s}", Color.white);
+            PlaceCenter(panels[s].rectTransform, new Vector2(x, 0f), new Vector2(cell, cell));
+
+            arrows[s] = Shape(panels[s].transform, $"Arrow{s}", AcShapes.Triangle(), Color.white,
+                Vector2.zero, new Vector2(cell * 0.58f, cell * 0.5f));
+
+            hidden[s] = AcUi.Label(panels[s].transform, $"Hidden{s}", Mathf.RoundToInt(cell * 0.6f), Color.white, TextAnchor.MiddleCenter, true, true);
+            PlaceCenter(hidden[s].rectTransform, Vector2.zero, new Vector2(cell, cell));
+            hidden[s].text = "?";
         }
-        SetZoneColors(i, -1, col);
     }
 
-    protected override void OnTurnStart(int i)
+    protected override void OnTurnStart(int i, Color c)
     {
+        col = c;
         step = 0;
-        SetZoneColors(i, step, PlayerColor(i));
+        for (int s = 0; s < len; s++)
+            arrows[s].rectTransform.localEulerAngles = new Vector3(0f, 0f, DirAngle[sequence[i][s]]);
+        Refresh(i);
     }
 
     protected override TurnResult TickTurn(int i, float dt)
@@ -66,55 +84,62 @@ public class GroupSequenceMicroGame : GroupRelayMicroGame
 
         if (pressed != sequence[i][step])
         {
-            if (arrowText[i][step] != null) arrowText[i][step].color = new Color(1f, 0.3f, 0.3f, 1f);
+            panels[step].color = new Color(0.85f, 0.25f, 0.25f, 1f);
+            ShowArrow(step, true);
+            arrows[step].color = Color.white;
             return TurnResult.Miss;
         }
 
         step++;
-        if (step >= sequence[i].Length) return TurnResult.Hit;
-        SetZoneColors(i, step, PlayerColor(i));
+        if (step >= len) return TurnResult.Hit;
+        Refresh(i);
         return TurnResult.Continue;
     }
 
     protected override void OnTurnEnd(int i, bool hit)
     {
         if (!hit) return;
-        foreach (var t in arrowText[i]) if (t != null) t.color = new Color(1f, 0.92f, 0.35f, 1f);
+        for (int s = 0; s < len; s++)
+        {
+            panels[s].color = HitColor;
+            arrows[s].color = new Color(0.12f, 0.10f, 0.05f, 1f);
+        }
     }
 
-    /// <summary>
-    /// 矢印の色を更新。current&lt;0 は手番前(全部うすく表示)。
-    /// 入力済み=暗く / いま押す矢印=白 / これから=プレイヤー色(妨害が強いと「？」で隠す)。
-    /// </summary>
-    private void SetZoneColors(int i, int current, Color col)
+    /// <summary>入力済み=暗い / いま押すパネル=明るく大きめ / これから=プレイヤー色(妨害時は「?」)。</summary>
+    private void Refresh(int i)
     {
-        var texts = arrowText[i];
-        for (int s = 0; s < texts.Length; s++)
+        for (int s = 0; s < len; s++)
         {
-            var t = texts[s];
-            if (t == null) continue;
-            if (current < 0)
+            float scale = 1f;
+            if (s < step)
             {
-                t.text = ArrowGlyph[sequence[i][s]];
-                t.color = new Color(col.r, col.g, col.b, 0.45f);
+                panels[s].color = new Color(0.20f, 0.20f, 0.26f, 1f);
+                arrows[s].color = new Color(0.45f, 0.45f, 0.52f, 1f);
+                ShowArrow(s, true);
             }
-            else if (s < current)
+            else if (s == step)
             {
-                t.color = new Color(0.35f, 0.35f, 0.4f, 1f);
-            }
-            else if (s == current)
-            {
-                t.text = ArrowGlyph[sequence[i][s]];
-                t.color = Color.white;
+                panels[s].color = col;
+                arrows[s].color = new Color(0.08f, 0.08f, 0.12f, 1f);
+                ShowArrow(s, true);
+                scale = 1.12f;
             }
             else
             {
-                // 視覚妨害: 2つ先以降を隠す(interference 0.5 以上)
-                bool hide = interference >= 0.5f && s > current + 1;
-                t.text = hide ? "？" : ArrowGlyph[sequence[i][s]];
-                t.color = col;
+                panels[s].color = Dim(col, 0.35f);
+                arrows[s].color = col;
+                bool hide = interference >= 0.5f && s > step + 1;
+                ShowArrow(s, !hide);
             }
+            panels[s].rectTransform.localScale = new Vector3(scale, scale, 1f);
         }
+    }
+
+    private void ShowArrow(int s, bool show)
+    {
+        arrows[s].enabled = show;
+        hidden[s].enabled = !show;
     }
 
     /// <summary>このフレームに押された方向。0=上 1=下 2=左 3=右、無ければ -1。</summary>

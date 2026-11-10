@@ -29,8 +29,11 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     public float interRoundDelay = 0.7f;
     [Tooltip("成否表示の秒数。")]
     public float resultFlashDuration = 0.9f;
-    [Tooltip("動作確認用: 0以上でアクションコマンドを固定(0=れんだ 1=タイミング 2=ためてはなせ 3=じゅんばんに)。-1 でランダム。")]
+    [Tooltip("動作確認用: 0以上でアクションコマンドを固定(0=れんだ 1=タイミング 2=ためてはなせ 3=じゅんばんに)。-1 で順番に巡回。")]
     public int debugForceGroupGame = -1;
+
+    // 次に出すアクションコマンドの番号(順番に巡回)。バトル中ずっと進み続けるよう、シリアライズしない。
+    private int nextGroupGameIndex;
 
     [Header("難易度ノブ雛形(Inspector調整)")]
     public float baseTimeLimit = 3.5f;        // 4.5f → 3.5f (短縮)
@@ -181,13 +184,23 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         var selections = cardSelectPhase != null ? cardSelectPhase.Selections : null;
         var mods = new ActionCommandModifiers(selections);
 
-        // アクションコマンドはグループ型(全員で1回・リレー式)の登録簿からランダムに選ぶ。
+        // アクションコマンドはグループ型(全員で1回・リレー式)の登録簿から「順番に」選ぶ。
+        // れんだ→タイミング→ためて はなせ→じゅんばんに→れんだ… とフェーズのたびに次へ進む。
         // debugForceGroupGame >= 0 のときはその番号に固定(動作確認用)。
         var groupRegistry = MicroGameRegistry.CreateGroupDefault();
-        string chosenName;
-        IMicroGame game = (debugForceGroupGame >= 0)
-            ? groupRegistry.Create(debugForceGroupGame, out chosenName)
-            : groupRegistry.CreateRandom(rng, out chosenName);
+        string chosenName = "";
+        IMicroGame game;
+        if (debugForceGroupGame >= 0)
+        {
+            game = groupRegistry.Create(debugForceGroupGame, out chosenName);
+        }
+        else
+        {
+            game = groupRegistry.Count > 0
+                ? groupRegistry.Create(nextGroupGameIndex % groupRegistry.Count, out chosenName)
+                : null;
+            nextGroupGameIndex++;
+        }
         if (game == null)
         {
             Debug.LogError($"[ActionCommandPhase] アクションコマンドを生成できませんでした(debugForceGroupGame={debugForceGroupGame}, 登録数={groupRegistry.Count})。BattleResult へ進みます。");

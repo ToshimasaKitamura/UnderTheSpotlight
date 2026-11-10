@@ -2,12 +2,20 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// グループ型(リレー式)アクションコマンドの共通基底。
-/// 1本の大きなバーを参加人数ぶんの「領域」に分割し、P1→P2→… の順に手番プレイヤーが自分の領域で操作する。
-/// 手番で成功(Hit)したら <see cref="MicroGameContext.OnPlayerAttack"/> を発火し、
-/// 光が次の領域へ「シュッ」と移って次のプレイヤーの手番になる。
+/// グループ型(リレー式)アクションコマンドの共通基底 ＝「アクションコマンド・フィールド」。
 ///
-/// 派生クラスは「領域の中身(BuildZone)」と「手番中の判定(TickTurn)」だけを実装すればよい。
+/// 画面中央やや下に統一デザインのフィールドを1枚出し、P1→P2→… の順に1人ずつ、
+/// そのフィールド全体を使ってミニゲームを遊ぶ(4人でも1つ1つが小さくならないように、同時分割はしない)。
+///
+///   ┌ ヘッダー: [P1] ゲーム名 / 操作説明 ─────────┐
+///   │ プレイエリア(各ミニゲームが丸・三角などで描く)│
+///   └ フッター: 残り時間バー ・ 手番チップ P1..P4 ─┘
+///
+/// 1手番の流れ: 準備(「P1 の ばん！」) → プレイ → 結果(HIT!/MISS) → 次のプレイヤー。
+/// HIT した瞬間に <see cref="MicroGameContext.OnPlayerAttack"/> を発火し、攻撃演出とダメージが入る。
+///
+/// 派生クラスは BuildPlay(プレイエリアの中身を1回作る) / OnTurnStart(手番ごとの初期化) /
+/// TickTurn(判定) を実装するだけでよい。
 /// 仕様: docs/Design/ActionCommand_Design.md「グループ型アクションコマンド一覧」
 /// </summary>
 public abstract class GroupRelayMicroGame : IMicroGame
@@ -18,43 +26,52 @@ public abstract class GroupRelayMicroGame : IMicroGame
     /// <summary>手番1回分の判定結果。</summary>
     protected enum TurnResult { Continue, Hit, Miss }
 
-    // ---- バー寸法(スクリーン画素, 1920x1080 基準) ----
-    protected const float BarW = 940f;
-    protected const float BarH = 92f;
-    protected const float Pad = 8f;
+    // ---- フィールド寸法(1920x1080 基準のキャンバス座標) ----
+    private const float FieldW = 700f;
+    private const float FieldH = 440f;
+    private static readonly Vector2 FieldCenter = new Vector2(0f, -140f); // ボスと攻撃表示(上側)を隠さない位置
+    private const float BorderW = 6f;
+    private const float HeaderH = 84f;
+    private const float FooterH = 60f;
+
+    /// <summary>プレイエリアの大きさ。BuildPlay に渡す RectTransform(中心原点)の内寸。</summary>
+    protected const float PlayW = FieldW - BorderW * 2f - 24f;
+    protected const float PlayH = FieldH - BorderW * 2f - HeaderH - FooterH;
+
+    // ---- 手番の間の演出時間 ----
+    private const float ReadyDur = 0.6f;
+    private const float ResultDur = 0.65f;
 
     protected MicroGameContext Ctx { get; private set; }
     protected int PlayerCount { get; private set; }
     /// <summary>手番プレイヤー(0始まり)。</summary>
     protected int Current { get; private set; }
-    /// <summary>手番開始からの経過秒。</summary>
+    /// <summary>プレイ開始(準備の後)からの経過秒。</summary>
     protected float PlayerTime { get; private set; }
     /// <summary>1人あたりの制限時間(秒)。<see cref="ComputeTurnLimit"/> で決まる。</summary>
     protected float PerPlayerLimit { get; private set; }
-    protected float InnerW { get; private set; }
-    protected float ZoneW { get; private set; }
-    /// <summary>領域(下地)の内寸。BuildZone に渡す RectTransform の大きさ。</summary>
-    protected float ZoneInnerW => ZoneW - 3f;
-    protected float ZoneInnerH => BarH - Pad * 2f;
 
-    /// <summary>手番終了時に領域へ「HIT!/MISS」を表示するか。</summary>
-    protected virtual bool ShowResultLabels => true;
-    /// <summary>画面上部に出す操作説明。</summary>
+    /// <summary>ヘッダーに出す操作説明。</summary>
     protected abstract string PromptText { get; }
 
-    private Color[] colors;
-    private GameObject root;
-    private Image[] zoneBg;
-    private Text[] resultLabels;
-    private RectTransform highlightRt;
-    private RectTransform lightRt;
-    private Image lightImg;
+    private enum Stage { Ready, Play, Result, Done }
+    private Stage stage;
+    private float stageT;
 
-    private bool switching;
-    private float switchT;
-    private const float SwitchDur = 0.26f;
-    private int switchFrom, switchTo;
-    private bool finished;
+    private Color[] colors;
+    private int[] turnState; // 0=未 1=HIT 2=MISS
+
+    // UI 参照
+    private GameObject root;
+    private Image frameImg;
+    private Image headerChip;
+    private Text headerChipText;
+    private RectTransform playArea;
+    private Image timerFill;
+    private Image[] orderChips;
+    private Image[] orderRings;
+    private Text[] orderTexts;
+    private Text centerMsg;
 
     // ================= ライフサイクル =================
 
@@ -63,117 +80,70 @@ public abstract class GroupRelayMicroGame : IMicroGame
         if (c == null)
         {
             Debug.LogError($"[{GetType().Name}] MicroGameContext が null です。ActionCommandPhase から渡されるコンテキストを確認してください。");
-            finished = true;
+            stage = Stage.Done;
             return;
         }
         if (c.uiRoot == null)
         {
-            Debug.LogError($"[{GetType().Name}] MicroGameContext.uiRoot が null です。UI を生成できません。");
-            finished = true;
+            Debug.LogError($"[{GetType().Name}] MicroGameContext.uiRoot が null です。アクションコマンドの UI を生成できません。");
+            stage = Stage.Done;
             return;
         }
 
         Ctx = c;
         PlayerCount = Mathf.Max(1, c.playerCount);
         colors = c.playerColors;
-        InnerW = BarW - Pad * 2f;
-        ZoneW = InnerW / PlayerCount;
         PerPlayerLimit = ComputeTurnLimit(c);
-        Current = 0;
-        PlayerTime = 0f;
-        switching = false;
-        finished = false;
+        turnState = new int[PlayerCount];
         Succeeded = false;
 
         OnSetup(c);
-
-        root = new GameObject(GetType().Name, typeof(RectTransform));
-        root.transform.SetParent(c.uiRoot, false);
-        AcUi.Stretch(root.GetComponent<RectTransform>());
-
-        var guiHelper = root.AddComponent<MicroGameIMGUIHelper>();
-        guiHelper.Initialize(() => PromptText);
-        guiHelper.SetTimer(() => PlayerTime, () => PerPlayerLimit);
-
-        // 外枠 → 下地
-        var outer = AcUi.Image(root.transform, "BarOuter", new Color(0f, 0f, 0f, 1f));
-        AcUi.Place(outer.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(BarW + 12f, BarH + 12f));
-        var bg = AcUi.Image(outer.transform, "BarBg", new Color(0.10f, 0.11f, 0.16f, 1f));
-        AcUi.Place(bg.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(BarW, BarH));
-
-        zoneBg = new Image[PlayerCount];
-        resultLabels = new Text[PlayerCount];
-
-        for (int i = 0; i < PlayerCount; i++)
-        {
-            Color col = PlayerColor(i);
-            float leftX = -InnerW / 2f + i * ZoneW;
-
-            // 領域の下地(暗いプレイヤーカラー)
-            var zbg = AcUi.Image(bg.transform, $"ZoneBg{i}", Dim(col, 0.22f));
-            PlaceLeft(zbg.rectTransform, leftX, ZoneInnerW, ZoneInnerH);
-            zoneBg[i] = zbg;
-
-            // 派生クラス固有の中身
-            BuildZone(i, zbg.rectTransform, col);
-
-            // プレイヤーラベル P1..P4
-            var lbl = AcUi.Label(bg.transform, $"P{i + 1}", 20, col, TextAnchor.MiddleCenter, true, true);
-            PlaceCenter(lbl.rectTransform, leftX + ZoneW / 2f, -(BarH / 2f + 22f), ZoneW, 30f);
-
-            // 成否ラベル(バーの上。手番終了まで非表示)
-            var res = AcUi.Label(bg.transform, $"Result{i}", 26, Color.white, TextAnchor.MiddleCenter, true, true);
-            PlaceCenter(res.rectTransform, leftX + ZoneW / 2f, BarH / 2f + 26f, ZoneW, 34f);
-            res.text = "";
-            resultLabels[i] = res;
-        }
-
-        // 領域の区切り線
-        for (int i = 1; i < PlayerCount; i++)
-        {
-            float x = -InnerW / 2f + i * ZoneW;
-            var div = AcUi.Image(bg.transform, $"Div{i}", new Color(0f, 0f, 0f, 0.7f));
-            PlaceCenter(div.rectTransform, x, 0f, 3f, BarH - Pad);
-        }
-
-        // 手番領域のハイライト
-        var hl = AcUi.Image(bg.transform, "Highlight", new Color(1f, 1f, 1f, 0f));
-        highlightRt = hl.rectTransform;
-        MoveHighlightTo(Current);
-
-        // 交代の光(初期は非表示)
-        lightImg = AcUi.Image(bg.transform, "SwitchLight", new Color(1f, 1f, 1f, 0f));
-        lightRt = lightImg.rectTransform;
-        lightRt.anchorMin = lightRt.anchorMax = new Vector2(0.5f, 0.5f);
-        lightRt.pivot = new Vector2(0.5f, 0.5f);
-        lightRt.sizeDelta = new Vector2(46f, 46f);
-
-        OnTurnStart(Current);
+        BuildField(c.uiRoot);
+        EnterReady(0);
     }
 
     public bool Tick(float dt)
     {
-        if (finished) return true;
-
-        if (switching)
+        switch (stage)
         {
-            TickSwitch(dt);
-            return false;
+            case Stage.Ready:
+                stageT += dt;
+                if (stageT >= ReadyDur)
+                {
+                    stage = Stage.Play;
+                    PlayerTime = 0f;
+                    SetCenterMsg("", Color.white);
+                }
+                return false;
+
+            case Stage.Play:
+            {
+                PlayerTime += dt;
+                TurnResult r = TickTurn(Current, dt);
+                if (r == TurnResult.Continue && PlayerTime >= PerPlayerLimit) r = TurnResult.Miss;
+                if (timerFill != null) timerFill.fillAmount = Mathf.Clamp01(1f - PlayerTime / PerPlayerLimit);
+                if (r != TurnResult.Continue) EndTurn(r == TurnResult.Hit);
+                return false;
+            }
+
+            case Stage.Result:
+                stageT += dt;
+                if (stageT >= ResultDur)
+                {
+                    int next = Current + 1;
+                    if (next >= PlayerCount)
+                    {
+                        Succeeded = true;
+                        stage = Stage.Done;
+                        return true;
+                    }
+                    EnterReady(next);
+                }
+                return false;
+
+            default:
+                return true;
         }
-
-        PlayerTime += dt;
-        TurnResult r = TickTurn(Current, dt);
-
-        // 手番領域を少し脈動させる
-        if (highlightRt != null)
-        {
-            float pulse = 0.35f + 0.25f * (Mathf.Sin(Time.time * 8f) * 0.5f + 0.5f);
-            SetImageAlpha(highlightRt, pulse);
-        }
-
-        if (r == TurnResult.Continue && PlayerTime >= PerPlayerLimit) r = TurnResult.Miss;
-        if (r != TurnResult.Continue) EndTurn(r == TurnResult.Hit);
-        return false;
     }
 
     public void Cleanup()
@@ -190,107 +160,177 @@ public abstract class GroupRelayMicroGame : IMicroGame
     /// <summary>UI 生成前に呼ばれる。難易度パラメータや配列の初期化に使う。</summary>
     protected virtual void OnSetup(MicroGameContext c) { }
 
-    /// <summary>領域 i の中身を生成する。zone は pivot 左・内寸 ZoneInnerW x ZoneInnerH。</summary>
-    protected abstract void BuildZone(int i, RectTransform zone, Color col);
+    /// <summary>プレイエリアの中身を1回だけ生成する。play は中心原点・内寸 PlayW x PlayH。</summary>
+    protected abstract void BuildPlay(RectTransform play);
 
-    /// <summary>プレイヤー i の手番が始まった(交代アニメ完了直後)。</summary>
-    protected virtual void OnTurnStart(int i) { }
+    /// <summary>プレイヤー i の手番の準備(「P? の ばん！」表示と同時)。見た目をこのプレイヤー用に戻す。</summary>
+    protected abstract void OnTurnStart(int i, Color col);
 
-    /// <summary>手番中の毎フレーム判定。時間切れは基底が Miss として扱う。</summary>
+    /// <summary>プレイ中の毎フレーム判定。時間切れは基底が Miss として扱う。</summary>
     protected abstract TurnResult TickTurn(int i, float dt);
 
-    /// <summary>プレイヤー i の手番が終わった(成否確定直後)。</summary>
+    /// <summary>プレイヤー i の手番が終わった(成否確定直後)。結果の見た目を出す。</summary>
     protected virtual void OnTurnEnd(int i, bool hit) { }
 
-    // ================= 内部処理 =================
+    // ================= 手番進行 =================
+
+    private void EnterReady(int i)
+    {
+        Current = i;
+        stage = Stage.Ready;
+        stageT = 0f;
+        PlayerTime = 0f;
+
+        Color col = PlayerColor(i);
+        if (frameImg != null) frameImg.color = col;
+        if (headerChip != null) headerChip.color = col;
+        if (headerChipText != null) headerChipText.text = $"P{i + 1}";
+        if (timerFill != null) { timerFill.fillAmount = 1f; timerFill.color = col; }
+        RefreshOrderChips();
+
+        OnTurnStart(i, col);
+        SetCenterMsg($"P{i + 1} の ばん！", col);
+    }
 
     private void EndTurn(bool hit)
     {
         int i = Current;
+        turnState[i] = hit ? 1 : 2;
         if (hit)
         {
-            SetAttackSource(i);              // ダメージ光の始点=この領域の末端
+            SetAttackSource();               // ダメージ光の始点=プレイエリア中央
             Ctx.OnPlayerAttack?.Invoke(i);   // このプレイヤーの攻撃命中
         }
-        if (ShowResultLabels && resultLabels != null && resultLabels[i] != null)
-        {
-            resultLabels[i].text = hit ? "HIT!" : "MISS";
-            resultLabels[i].color = hit ? new Color(1f, 0.92f, 0.35f, 1f) : new Color(0.65f, 0.65f, 0.72f, 1f);
-        }
         OnTurnEnd(i, hit);
-        BeginSwitch(i, i + 1);
+        SetCenterMsg(hit ? "HIT!" : "MISS", hit ? HitColor : MissColor);
+        RefreshOrderChips();
+        stage = Stage.Result;
+        stageT = 0f;
     }
 
-    private void BeginSwitch(int from, int to)
-    {
-        // 次がいなければ終了
-        if (to >= PlayerCount)
-        {
-            Succeeded = true;
-            finished = true;
-            return;
-        }
-        switching = true;
-        switchT = 0f;
-        switchFrom = from;
-        switchTo = to;
+    // ================= フィールド UI =================
 
-        Color col = PlayerColor(to);
-        if (lightImg != null) lightImg.color = new Color(col.r, col.g, col.b, 1f);
-        if (lightRt != null)
+    protected static readonly Color HitColor = new Color(1f, 0.92f, 0.35f, 1f);
+    protected static readonly Color MissColor = new Color(0.62f, 0.62f, 0.70f, 1f);
+    protected static readonly Color FieldBg = new Color(0.07f, 0.08f, 0.13f, 0.96f);
+
+    private void BuildField(RectTransform parent)
+    {
+        root = new GameObject(GetType().Name, typeof(RectTransform));
+        root.transform.SetParent(parent, false);
+        AcUi.Stretch(root.GetComponent<RectTransform>());
+
+        // 外枠(手番プレイヤー色) → 下地
+        frameImg = AcUi.Image(root.transform, "FieldFrame", Color.white);
+        AcUi.Place(frameImg.rectTransform, new Vector2(0.5f, 0.5f), FieldCenter, new Vector2(FieldW, FieldH));
+        var bg = AcUi.Image(frameImg.transform, "FieldBg", FieldBg);
+        PlaceCenter(bg.rectTransform, Vector2.zero, new Vector2(FieldW - BorderW * 2f, FieldH - BorderW * 2f));
+        float innerW = FieldW - BorderW * 2f;
+        float innerH = FieldH - BorderW * 2f;
+
+        // ---- ヘッダー ----
+        float headerY = innerH / 2f - HeaderH / 2f;
+        var header = AcUi.Image(bg.transform, "Header", new Color(1f, 1f, 1f, 0.06f));
+        PlaceCenter(header.rectTransform, new Vector2(0f, headerY), new Vector2(innerW, HeaderH));
+
+        headerChip = Shape(header.transform, "PlayerChip", AcShapes.Circle(), Color.white,
+            new Vector2(-innerW / 2f + 50f, 0f), new Vector2(64f, 64f));
+        headerChipText = AcUi.Label(headerChip.transform, "PlayerChipText", 26, new Color(0.08f, 0.08f, 0.12f, 1f), TextAnchor.MiddleCenter, true, false);
+        PlaceCenter(headerChipText.rectTransform, Vector2.zero, new Vector2(64f, 64f));
+
+        var title = AcUi.Label(header.transform, "Title", 34, Color.white, TextAnchor.MiddleLeft, true, true);
+        title.text = DisplayName;
+        PlaceLeftAt(title.rectTransform, -innerW / 2f + 96f, 16f, innerW - 120f, 40f);
+        var prompt = AcUi.Label(header.transform, "Prompt", 22, new Color(0.85f, 0.87f, 0.95f, 1f), TextAnchor.MiddleLeft, false, true);
+        prompt.text = PromptText;
+        PlaceLeftAt(prompt.rectTransform, -innerW / 2f + 98f, -20f, innerW - 120f, 28f);
+
+        // ---- プレイエリア ----
+        float playY = innerH / 2f - HeaderH - PlayH / 2f;
+        var playGo = new GameObject("PlayArea", typeof(RectTransform));
+        playGo.transform.SetParent(bg.transform, false);
+        playArea = playGo.GetComponent<RectTransform>();
+        PlaceCenter(playArea, new Vector2(0f, playY), new Vector2(PlayW, PlayH));
+        BuildPlay(playArea);
+
+        // 中央メッセージ(「P1 の ばん！」/ HIT! / MISS)。プレイ要素より手前に描くため最後に作る
+        centerMsg = AcUi.Label(playArea, "CenterMsg", 56, Color.white, TextAnchor.MiddleCenter, true, true);
+        PlaceCenter(centerMsg.rectTransform, Vector2.zero, new Vector2(PlayW, 90f));
+        centerMsg.text = "";
+
+        // ---- フッター ----
+        float footerY = -innerH / 2f + FooterH / 2f;
+        var footer = AcUi.Image(bg.transform, "Footer", new Color(1f, 1f, 1f, 0.06f));
+        PlaceCenter(footer.rectTransform, new Vector2(0f, footerY), new Vector2(innerW, FooterH));
+
+        // 手番チップ(右側): P1..Pn。順番と結果が一目で分かる
+        const float chipD = 40f;
+        const float chipGap = 14f;
+        float chipsW = PlayerCount * chipD + (PlayerCount - 1) * chipGap;
+        float chipsLeft = innerW / 2f - 20f - chipsW;
+        orderChips = new Image[PlayerCount];
+        orderRings = new Image[PlayerCount];
+        orderTexts = new Text[PlayerCount];
+        for (int i = 0; i < PlayerCount; i++)
         {
-            lightRt.anchoredPosition = new Vector2(ZoneCenterX(from), 0f);
-            lightRt.sizeDelta = new Vector2(60f, 60f);
+            var pos = new Vector2(chipsLeft + chipD / 2f + i * (chipD + chipGap), 0f);
+            orderRings[i] = Shape(footer.transform, $"OrderRing{i}", AcShapes.Ring(), Color.white, pos, new Vector2(chipD + 12f, chipD + 12f));
+            orderChips[i] = Shape(footer.transform, $"OrderChip{i}", AcShapes.Circle(), Color.white, pos, new Vector2(chipD, chipD));
+            orderTexts[i] = AcUi.Label(orderChips[i].transform, $"OrderText{i}", 17, Color.white, TextAnchor.MiddleCenter, true, false);
+            PlaceCenter(orderTexts[i].rectTransform, Vector2.zero, new Vector2(chipD, chipD));
+            orderTexts[i].text = $"P{i + 1}";
         }
-        if (highlightRt != null) SetImageAlpha(highlightRt, 0f);
+
+        // 残り時間バー(左側): 左から縮む
+        float timerLeft = -innerW / 2f + 24f;
+        float timerW = Mathf.Max(120f, chipsLeft - 30f - timerLeft);
+        var timerBg = AcUi.Image(footer.transform, "TimerBg", new Color(0f, 0f, 0f, 0.55f));
+        PlaceLeftAt(timerBg.rectTransform, timerLeft, 0f, timerW, 18f);
+        timerFill = AcUi.Image(timerBg.transform, "TimerFill", Color.white);
+        AcUi.Stretch(timerFill.rectTransform, 3f);
+        timerFill.type = Image.Type.Filled;
+        timerFill.fillMethod = Image.FillMethod.Horizontal;
+        timerFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        timerFill.sprite = AcShapes.Square(); // Filled 表示には sprite が必要
+        timerFill.fillAmount = 1f;
     }
 
-    private void TickSwitch(float dt)
+    private void RefreshOrderChips()
     {
-        switchT += dt;
-        float p = Mathf.Clamp01(switchT / SwitchDur);
-        float ease = 1f - (1f - p) * (1f - p); // easeOut
-
-        if (lightRt != null)
+        if (orderChips == null) return;
+        for (int i = 0; i < PlayerCount; i++)
         {
-            float x = Mathf.Lerp(ZoneCenterX(switchFrom), ZoneCenterX(switchTo), ease);
-            lightRt.anchoredPosition = new Vector2(x, 0f);
-            float s = Mathf.Lerp(62f, 26f, p);
-            lightRt.sizeDelta = new Vector2(s, s);
-            SetImageAlpha(lightRt, 1f - 0.3f * p);
-        }
-
-        if (p >= 1f)
-        {
-            switching = false;
-            Current = switchTo;
-            PlayerTime = 0f;
-            if (lightRt != null) SetImageAlpha(lightRt, 0f);
-            MoveHighlightTo(Current);
-            OnTurnStart(Current);
+            Color col = PlayerColor(i);
+            bool isCurrent = (i == Current) && turnState[i] == 0;
+            Color chip;
+            Color text = new Color(0.08f, 0.08f, 0.12f, 1f);
+            switch (turnState[i])
+            {
+                case 1: chip = HitColor; break;                            // HIT
+                case 2: chip = new Color(0.30f, 0.30f, 0.36f, 1f); text = MissColor; break; // MISS
+                default: chip = isCurrent ? col : Dim(col, 0.55f); break;  // 手番中 / 未
+            }
+            orderChips[i].color = chip;
+            orderTexts[i].color = text;
+            orderRings[i].color = isCurrent ? Color.white : new Color(1f, 1f, 1f, 0f);
         }
     }
 
-    private void MoveHighlightTo(int i)
+    private void SetCenterMsg(string msg, Color col)
     {
-        if (highlightRt == null) return;
-        float leftX = -InnerW / 2f + i * ZoneW;
-        PlaceLeft(highlightRt, leftX - 2f, ZoneW + 1f, BarH - Pad);
-        Color col = PlayerColor(i);
-        var img = highlightRt.GetComponent<Image>();
-        if (img != null) img.color = new Color(col.r, col.g, col.b, 0.4f);
+        if (centerMsg == null) return;
+        centerMsg.text = msg;
+        centerMsg.color = col;
     }
 
-    private float ZoneCenterX(int i) => -InnerW / 2f + (i + 0.5f) * ZoneW;
-
-    // 領域 i の「末端(右端)中央」のスクリーン座標を ctx に記録(ダメージ光の始点用)。
-    private void SetAttackSource(int i)
+    // プレイエリア中央のスクリーン座標を ctx に記録(ダメージ光の始点用)。
+    private void SetAttackSource()
     {
-        if (Ctx == null || zoneBg == null || i < 0 || i >= zoneBg.Length || zoneBg[i] == null) return;
+        if (Ctx == null || playArea == null) return;
         var corners = new Vector3[4];
-        zoneBg[i].rectTransform.GetWorldCorners(corners); // 0=BL,1=TL,2=TR,3=BR (Overlay=画素)
-        Vector3 rightMid = (corners[2] + corners[3]) * 0.5f;
-        Ctx.LastAttackScreenPos = new Vector2(rightMid.x, rightMid.y);
+        playArea.GetWorldCorners(corners); // Overlay キャンバスでは画素座標
+        Vector3 center = (corners[0] + corners[2]) * 0.5f;
+        Ctx.LastAttackScreenPos = new Vector2(center.x, center.y);
         Ctx.HasLastAttackScreenPos = true;
     }
 
@@ -302,51 +342,33 @@ public abstract class GroupRelayMicroGame : IMicroGame
         return Color.white;
     }
 
-    protected static Color Dim(Color c, float a) => new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, a);
+    protected static Color Dim(Color c, float k) => new Color(c.r * k, c.g * k, c.b * k, c.a);
+    protected static Color WithAlpha(Color c, float a) => new Color(c.r, c.g, c.b, a);
 
-    protected static void SetImageAlpha(RectTransform rt, float a)
+    /// <summary>図形(丸/リング/三角)を親の中心基準で置く。</summary>
+    protected static Image Shape(Transform parent, string name, Sprite sprite, Color col, Vector2 pos, Vector2 size)
     {
-        if (rt == null) return;
-        var img = rt.GetComponent<Image>();
-        if (img != null) { var c = img.color; img.color = new Color(c.r, c.g, c.b, a); }
+        var img = AcUi.Image(parent, name, col);
+        img.sprite = sprite;
+        PlaceCenter(img.rectTransform, pos, size);
+        return img;
     }
 
-    /// <summary>親中心基準で「左端 x・幅・高さ」で配置(pivot 左)。</summary>
-    protected static void PlaceLeft(RectTransform rt, float leftX, float w, float h)
-    {
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.pivot = new Vector2(0f, 0.5f);
-        rt.anchoredPosition = new Vector2(leftX, 0f);
-        rt.sizeDelta = new Vector2(w, h);
-    }
-
-    /// <summary>親中心基準で「中心 x,y・幅・高さ」で配置(pivot 中央)。</summary>
-    protected static void PlaceCenter(RectTransform rt, float cx, float cy, float w, float h)
+    /// <summary>親の中心基準で中心 pos・大きさ size に置く(pivot 中央)。</summary>
+    protected static void PlaceCenter(RectTransform rt, Vector2 pos, Vector2 size)
     {
         rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = new Vector2(cx, cy);
-        rt.sizeDelta = new Vector2(w, h);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
     }
 
-    /// <summary>領域内の「左端からの x・中心からの y」に中心を置く(pivot 中央)。BuildZone の子に使う。</summary>
-    protected static void PlaceInZone(RectTransform rt, float xFromLeft, float yFromCenter, float w, float h)
+    /// <summary>親の中心基準で「左端 x・中心 y」に置く(pivot 左)。</summary>
+    protected static void PlaceLeftAt(RectTransform rt, float leftX, float y, float w, float h)
     {
-        rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = new Vector2(xFromLeft, yFromCenter);
-        rt.sizeDelta = new Vector2(w, h);
-    }
-
-    /// <summary>領域内の左端から伸びる塗り(pivot 左)。幅は呼び出し側が sizeDelta.x で更新する。</summary>
-    protected static RectTransform CreateLeftFill(Transform zone, string name, Color col, float h)
-    {
-        var f = AcUi.Image(zone, name, col);
-        var rt = f.rectTransform;
-        rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
+        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot = new Vector2(0f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(0f, h);
-        return rt;
+        rt.anchoredPosition = new Vector2(leftX, y);
+        rt.sizeDelta = new Vector2(w, h);
     }
 }
