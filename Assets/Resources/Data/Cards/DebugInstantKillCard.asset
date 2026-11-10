@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f9d8cdaebd0c41d085d15ef00f89dd4, type: 3}
+  m_Name: DebugInstantKillCard
+  m_EditorClassIdentifier:
+  id: debug_instakill
+  displayName: "【DEBUG】即死"
+  description: "【デバッグ用】全部位に大ダメージを与えてボスを即死させる。"
+  category: 0
+  tier: 2
+  baseDifficultyModifier: -3
+  basePower: 999
+  difficultyPerUpgrade: 0
+  powerPerUpgrade: 0
+  effectType: 6
+  attackRange: 3
+  cardColor: {r: 1, g: 0, b: 1, a: 1}
+  icon: {fileID: 0}

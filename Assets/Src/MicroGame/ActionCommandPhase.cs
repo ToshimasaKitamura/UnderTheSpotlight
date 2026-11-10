@@ -82,6 +82,9 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     private ActionCommandIMGUIHelper guiHelper;
     private string bannerText = "";
     private List<HitEffectData> hitEffects = new List<HitEffectData>();
+    // ダメージ演出の光(DamageLight)の実体。Exit で確実に破棄するため追跡する
+    // (撃破で AC を中断すると StopAllCoroutines で Destroy 前にコルーチンが止まり、光が残るため)。
+    private readonly List<GameObject> hitLightGos = new List<GameObject>();
 
     public class HitEffectData
     {
@@ -154,6 +157,11 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         StopAllCoroutines();
         if (uiHost != null) { Destroy(uiHost); uiHost = null; microRoot = null; }
         if (guiHelper != null) { Destroy(guiHelper); guiHelper = null; }
+        // 飛行中のダメージ光を確実に破棄(撃破中断で残るのを防ぐ)
+        foreach (var go in hitLightGos) if (go != null) Destroy(go);
+        hitLightGos.Clear();
+        // 揺れ途中で止まった敵をホーム位置へ戻す
+        if (cachedEnemyTf != null) cachedEnemyTf.position = cachedEnemyHome;
         hitEffects.Clear();
         bannerText = "";
         UnityEngine.Debug.Log("[ActionCommandPhase] 終了");
@@ -208,6 +216,9 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         // 1人用の場合は人数分ループさせる(本来のパーティゲームの挙動)。
         bool isGroupGame = (game is GroupButtonMicroGame) || (game is GroupMashMicroGame);
 
+        // ボスを倒した瞬間にアクションコマンドを止めるためのフラグ
+        bool enemyDefeated = false;
+
         if (isGroupGame)
         {
             var k = mods.Resolve(0, difficultyTuning);
@@ -238,6 +249,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
             }
             game.Cleanup();
             RoundsPlayed = 1;
+            if (IsEnemyDefeated()) enemyDefeated = true;
         }
         else
         {
@@ -285,7 +297,10 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
                 game.Cleanup();
                 RoundsPlayed++;
-                
+
+                // ボスを倒したら残りのプレイヤーのコマンドは行わず即中断
+                if (IsEnemyDefeated()) { enemyDefeated = true; break; }
+
                 // 次のプレイヤーへのバナー更新
                 if (p < playerCount - 1)
                 {
@@ -296,16 +311,33 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
             }
         }
 
-        // 集計表示(命中数=SuccessCount)
-        bannerText = $"HIT {SuccessCount}/{playerCount}";
-        yield return new WaitForSeconds(resultFlashDuration);
+        // 集計表示(命中数=SuccessCount)。ボス撃破で中断した場合は演出を待たせず即結果へ。
+        if (!enemyDefeated)
+        {
+            bannerText = $"HIT {SuccessCount}/{playerCount}";
+            yield return new WaitForSeconds(resultFlashDuration);
+        }
 
         routine = null;
 
-        // 撃破判定は BattleResultPhase が「全部位破壊」で行う。ここでは常に結果表示へ進む。
-        UnityEngine.Debug.Log($"[ActionCommandPhase] 命中 {SuccessCount}/{playerCount} → BattleResult へ");
+        // 撃破判定・破壊演出・次ボス登場は BattleResultPhase が担当する。
+        UnityEngine.Debug.Log($"[ActionCommandPhase] 命中 {SuccessCount}/{playerCount} → BattleResult へ (撃破={enemyDefeated})");
         if (stateMachine != null)
             stateMachine.ChangeState(BattleStateMachine.State.BattleResult);
+    }
+
+    /// <summary>敵(ボス)の全部位が破壊されたか。アクションコマンドを即中断する判定に使う。</summary>
+    private bool IsEnemyDefeated()
+    {
+        if (enemyState == null || enemyState.enemyData == null) return false;
+        var parts = enemyState.enemyData.parts;
+        if (parts == null || parts.Count == 0) return false;
+        foreach (var p in parts)
+        {
+            if (p == null || string.IsNullOrEmpty(p.id)) continue;
+            if (!enemyState.IsDestroyed(p.id)) return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -333,24 +365,37 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         // 攻撃カードはカード威力、非攻撃カードは nonAttackDefaultPower を基礎威力にする。
         if (enemyState != null)
         {
-            int basePower = (card.Category == CardCategory.Attack) ? card.EffectivePower : nonAttackDefaultPower;
-            dmg = effectProcessor != null ? effectProcessor.CalculateAttackPower(basePower) : basePower;
-            dmg = Mathf.Max(1, dmg);
-
-            var targets = partSelectPhase != null ? partSelectPhase.TargetPartIds : null;
-            string partId = (targets != null && playerIndex < targets.Count) ? targets[playerIndex] : null;
-            if (string.IsNullOrEmpty(partId))
+            if (card.Data != null && card.Data.effectType == CardEffectType.DebugInstantKill)
             {
-                // 部位未指定なら生存部位のいずれかへ
+                // 【デバッグ】全生存部位に大ダメージ＝ボス即死(動作確認用)
                 var alive = new List<string>(enemyState.EnumerateAliveParts());
-                partId = alive.Count > 0 ? alive[0] : null;
-            }
-            if (!string.IsNullOrEmpty(partId))
-            {
-                enemyState.ApplyDamage(partId, dmg);
-                hitLabel += $" -{dmg}";
+                foreach (var pid in alive) enemyState.ApplyDamage(pid, 999999);
+                dmg = 999999;
+                hitLabel += " INSTAKILL";
                 if (perPlayerDamage != null && playerIndex < perPlayerDamage.Length)
                     perPlayerDamage[playerIndex] += dmg;
+            }
+            else
+            {
+                int basePower = (card.Category == CardCategory.Attack) ? card.EffectivePower : nonAttackDefaultPower;
+                dmg = effectProcessor != null ? effectProcessor.CalculateAttackPower(basePower) : basePower;
+                dmg = Mathf.Max(1, dmg);
+
+                var targets = partSelectPhase != null ? partSelectPhase.TargetPartIds : null;
+                string partId = (targets != null && playerIndex < targets.Count) ? targets[playerIndex] : null;
+                if (string.IsNullOrEmpty(partId))
+                {
+                    // 部位未指定なら生存部位のいずれかへ
+                    var alive = new List<string>(enemyState.EnumerateAliveParts());
+                    partId = alive.Count > 0 ? alive[0] : null;
+                }
+                if (!string.IsNullOrEmpty(partId))
+                {
+                    enemyState.ApplyDamage(partId, dmg);
+                    hitLabel += $" -{dmg}";
+                    if (perPlayerDamage != null && playerIndex < perPlayerDamage.Length)
+                        perPlayerDamage[playerIndex] += dmg;
+                }
             }
         }
 
@@ -434,6 +479,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         sr.sprite = sprite;
         sr.sortingOrder = 300;
         lightGo.transform.position = start;
+        hitLightGos.Add(lightGo);   // 中断時に Exit で破棄できるよう追跡
 
         float dur = 0.18f, t = 0f;
         while (t < dur)
@@ -445,6 +491,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
             lightGo.transform.localScale = Vector3.one * Mathf.Lerp(2.6f, 1.0f, p);
             yield return null;
         }
+        hitLightGos.Remove(lightGo);
         Destroy(lightGo);
 
         // 揺れ(前の揺れが残っていれば復帰させてから開始し、位置ドリフトを防ぐ)

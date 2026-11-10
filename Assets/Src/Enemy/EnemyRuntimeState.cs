@@ -18,7 +18,30 @@ public class EnemyRuntimeState : MonoBehaviour
     public bool resetOnAwake = true;
 
     private readonly Dictionary<string, int> currentHp = new Dictionary<string, int>();
+    private readonly Dictionary<string, int> maxHp = new Dictionary<string, int>(); // 人数でスケール後の実効最大HP
     private readonly HashSet<string> destroyed = new HashSet<string>();
+
+    // 参加人数ごとのボスHP倍率(アセットの maxHp を「4人用」とみなす基準)。
+    // 1人プレイはかなり低く(=数発で倒せる)、人数が増えるほど元のHPに近づく。
+    // 調整値はコードで必ず効かせたいので非シリアライズの定数にする。
+    private static readonly float[] HpScaleByPlayerCount = { 0.25f, 0.5f, 0.75f, 1.0f };
+
+    /// <summary>参加人数でスケールした部位の実効最大HP(最低1)。</summary>
+    private int ScaledMaxHp(EnemyPart p)
+    {
+        if (p == null) return 1;
+        int n = Mathf.Clamp(BattleParty.Count(null), 1, 4);
+        float scale = HpScaleByPlayerCount[n - 1];
+        return Mathf.Max(1, Mathf.RoundToInt(p.maxHp * scale));
+    }
+
+    /// <summary>部位の実効最大HP(人数スケール後)。未登録はアセット値へフォールバック。</summary>
+    public int GetMaxHp(string partId)
+    {
+        if (maxHp.TryGetValue(partId, out int m)) return m;
+        var part = enemyData != null ? enemyData.FindPart(partId) : null;
+        return part != null ? ScaledMaxHp(part) : 0;
+    }
 
     /// <summary>
     /// 今ターンに敵が「セリフで予告した部位」。Dodge で予告通りの攻撃が来る想定。
@@ -46,12 +69,15 @@ public class EnemyRuntimeState : MonoBehaviour
     public void ResetAll()
     {
         currentHp.Clear();
+        maxHp.Clear();
         destroyed.Clear();
         if (enemyData == null || enemyData.parts == null) return;
         foreach (var p in enemyData.parts)
         {
             if (p == null || string.IsNullOrEmpty(p.id)) continue;
-            currentHp[p.id] = Mathf.Max(0, p.maxHp);
+            int m = ScaledMaxHp(p);   // 参加人数でスケール
+            maxHp[p.id] = m;
+            currentHp[p.id] = m;
         }
     }
 
@@ -62,7 +88,7 @@ public class EnemyRuntimeState : MonoBehaviour
         var part = enemyData.FindPart(partId);
         if (part == null) return false;
         if (destroyed.Contains(partId)) return false;
-        int hp = currentHp.TryGetValue(partId, out int h) ? h : part.maxHp;
+        int hp = currentHp.TryGetValue(partId, out int h) ? h : GetMaxHp(partId);
         hp = Mathf.Max(0, hp - Mathf.Max(0, damage));
         currentHp[partId] = hp;
         OnPartHpChanged?.Invoke(part, hp);
@@ -97,12 +123,13 @@ public class EnemyRuntimeState : MonoBehaviour
         {
             if (p == null || string.IsNullOrEmpty(p.id)) continue;
             if (destroyed.Contains(p.id)) continue;
-            int hp = currentHp.TryGetValue(p.id, out int h) ? h : p.maxHp;
-            if (hp >= p.maxHp) continue;
-            hp = Mathf.Min(p.maxHp, hp + amount);
+            int pmax = GetMaxHp(p.id);
+            int hp = currentHp.TryGetValue(p.id, out int h) ? h : pmax;
+            if (hp >= pmax) continue;
+            hp = Mathf.Min(pmax, hp + amount);
             currentHp[p.id] = hp;
             OnPartHpChanged?.Invoke(p, hp);
-            Debug.Log($"[EnemyRuntimeState] 回復弾でボス回復: {p.displayName} ({p.id}) → HP {hp}/{p.maxHp}");
+            Debug.Log($"[EnemyRuntimeState] 回復弾でボス回復: {p.displayName} ({p.id}) → HP {hp}/{pmax}");
             return true;
         }
         return false;

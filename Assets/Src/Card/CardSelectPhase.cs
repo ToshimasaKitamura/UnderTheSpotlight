@@ -323,6 +323,9 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             }
             currentHand = new List<CardInstance>(drawn);
 
+            // 【デバッグ】即死カードを必ず手札の先頭に入れる(不要になったら ForceDebugInstantKillCard を false に)
+            if (ForceDebugInstantKillCard) EnsureDebugInstantKillInHand(currentHand);
+
             // カードをズーム後カメラの画面右へ生成
             yield return StartCoroutine(SpawnCardsAnimation(currentHand));
 
@@ -822,6 +825,29 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         {
             cardOriginalColors[cardIndex][i] = srs[i].color;
         }
+    }
+
+    // 【デバッグ】毎手札の先頭に即死カードを必ず入れるか。製品では false にする。
+    private const bool ForceDebugInstantKillCard = true;
+    private static CardData _debugInstantKillData;
+
+    /// <summary>デバッグ用の即死カードを手札の先頭に差し込む(枚数は維持)。</summary>
+    private void EnsureDebugInstantKillInHand(List<CardInstance> hand)
+    {
+        if (hand == null) return;
+        if (_debugInstantKillData == null)
+            _debugInstantKillData = Resources.Load<CardData>("Data/Cards/DebugInstantKillCard");
+        if (_debugInstantKillData == null)
+        {
+            UnityEngine.Debug.LogWarning("[CardSelectPhase] Resources/Data/Cards/DebugInstantKillCard が見つからず、即死カードを手札に入れられません。");
+            return;
+        }
+        if (hand.Exists(c => c != null && c.Data == _debugInstantKillData)) return; // 既にあれば何もしない
+
+        hand.Insert(0, new CardInstance(_debugInstantKillData));
+        // 表示は先頭から最大3枚なので、増えた分は末尾を落として枚数を維持する
+        int keep = Mathf.Max(1, partyDeck != null ? partyDeck.drawCount : 3);
+        while (hand.Count > keep) hand.RemoveAt(hand.Count - 1);
     }
 
     private int[] BuildTurnOrder(int n)

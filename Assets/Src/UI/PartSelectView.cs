@@ -416,9 +416,10 @@ public class PartSelectView : MonoBehaviour
         {
             var part = currentParts[i];
             int hp = runtimeState != null ? runtimeState.GetCurrentHp(part.id) : part.maxHp;
+            int pmax = runtimeState != null ? runtimeState.GetMaxHp(part.id) : part.maxHp;
 
-            // チップテキスト設定
-            chipTexts[i] = $"{part.displayName}  {hp}/{part.maxHp}";
+            // チップテキスト設定(人数スケール後の最大HPで表示)
+            chipTexts[i] = $"{part.displayName}  {hp}/{pmax}";
             chipColors[i] = GameColorScheme.TextOnDark;
             chipSelected[i] = false;
 

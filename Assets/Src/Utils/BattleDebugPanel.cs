@@ -125,7 +125,7 @@ public class BattleDebugPanel : MonoBehaviour
                     if (p == null) continue;
                     int cur = enemyState.GetCurrentHp(p.id);
                     bool dead = enemyState.IsDestroyed(p.id);
-                    sb.AppendLine($"  {p.displayName}: {cur}/{p.maxHp}{(dead ? " [破壊]" : "")}");
+                    sb.AppendLine($"  {p.displayName}: {cur}/{enemyState.GetMaxHp(p.id)}{(dead ? " [破壊]" : "")}");
                 }
             }
         }

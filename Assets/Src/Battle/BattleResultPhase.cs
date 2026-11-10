@@ -29,6 +29,9 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
 
     private Coroutine routine;
     private BattleResultIMGUIHelper guiHelper;
+    // 破壊演出で SetActive(false) にした Enemy を、非アクティブでも参照して再表示するためのキャッシュ。
+    // (GameObject.Find / FindObjectOfType は非アクティブを見つけられないため)
+    private GameObject cachedBossGo;
 
     // 表示用データ
     private List<ResultEntry> resultEntries = new List<ResultEntry>();
@@ -94,6 +97,10 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
         if (routine != null) { StopCoroutine(routine); routine = null; }
         StopAllCoroutines();
 
+        // 破壊演出の途中で抜けてもスローのまま固まらないよう必ず戻す
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
+
         if (enemyState != null)
         {
             enemyState.OnPartDestroyed -= OnPartDestroyed;
@@ -122,6 +129,17 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
         var perPlayerSuccess = actionCommandPhase?.PerPlayerSuccess;
         int playerCount = actionCommandPhase?.GetPlayerCount() ?? 4;
         var playerColors = actionCommandPhase?.GetPlayerColors();
+
+        // 0. ボス撃破済みなら、結果パレードを挟まず即・破壊演出→次ボス登場へ。
+        //    (止めの一撃からヒットストップ/撃破演出までの間延びを防ぐ)
+        if (enemyState != null && IsAllPartsDestroyed())
+        {
+            bossDefeated = true;
+            yield return StartCoroutine(PlayBossDefeatEffect());
+            routine = null;
+            yield return StartCoroutine(HandleBossDefeatedRoutine());
+            yield break;
+        }
 
         // 1. 各プレイヤーの結果をエントリーに追加
         currentMessage = "RESULT";
@@ -163,12 +181,12 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
         if (enemyState != null && IsAllPartsDestroyed())
         {
             bossDefeated = true;
-            currentMessage = "BOSS DEFEATED!";
-            yield return new WaitForSeconds(1.5f);
+            // 破壊時演出(ヒットストップ→時間がゆっくり→爆発→ボスが弾けて消える)
+            yield return StartCoroutine(PlayBossDefeatEffect());
 
-            // 勝利処理へ
+            // 勝利処理 or 次ボス登場(降下＋画面振動)
             routine = null;
-            HandleBossDefeated();
+            yield return StartCoroutine(HandleBossDefeatedRoutine());
             yield break;
         }
 
@@ -195,7 +213,7 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
         return true;
     }
 
-    private void HandleBossDefeated()
+    private IEnumerator HandleBossDefeatedRoutine()
     {
         var run = FindObjectOfType<RunProgress>();
         if (run != null)
@@ -206,23 +224,27 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
             {
                 if (GameSceneManager.Instance != null)
                     GameSceneManager.Instance.GoToResult(true);
-                return;
+                yield break;
             }
-            else
-            {
-                // 次のボスへ
-                if (enemyState != null && run.CurrentBoss != null)
-                {
-                    enemyState.enemyData = run.CurrentBoss;
-                    enemyState.ResetAll();
 
-                    // 連戦: 中央の常駐ボスの見た目も次のボスのスプライトへ更新
-                    var boss = FindObjectOfType<EnemyOnFieldController>();
-                    if (boss != null && !string.IsNullOrEmpty(run.CurrentBoss.bossSpriteName))
-                    {
-                        var sprite = BossSpriteResolver.Load(run.CurrentBoss.bossSpriteName);
-                        if (sprite != null) boss.SetUpSprite(sprite);
-                    }
+            // 次のボスへ
+            if (enemyState != null && run.CurrentBoss != null)
+            {
+                enemyState.enemyData = run.CurrentBoss;
+                enemyState.ResetAll();
+
+                // 連戦: カード選択/AC で見えるボス本体(Enemy ルート＋Visual 子の両 SpriteRenderer)を
+                // 次ボスへ更新し、破壊演出で消したボスを再表示する。
+                // ※ 従来は EnemyOnFieldController.SetUpSprite(ルートのみ) だったため、カード選択が参照する
+                //    Visual 子が更新されず「2体目が弾幕にしか出ない」状態だった。
+                UpdateFieldBossVisual(run.CurrentBoss);
+
+                // 次ボスの登場演出(画面外上部から降下＋着地で画面振動)
+                var intro = FindObjectOfType<BossIntroPhase>();
+                if (intro != null)
+                {
+                    currentMessage = "";
+                    yield return StartCoroutine(intro.PlayBossReentry());
                 }
             }
         }
@@ -230,6 +252,185 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
         // カード選択フェーズへ戻る
         if (stateMachine != null)
             stateMachine.ChangeState(BattleStateMachine.State.CardSelect);
+    }
+
+    /// <summary>
+    /// ボス撃破の破壊演出。時間をゆっくりにし、ボスを白く点滅させてから爆発＋弾けて消す。
+    /// スロー中でも進むよう全て unscaledDeltaTime で動かし、終了時に timeScale を必ず戻す。
+    /// 最後にボスを GameObject ごと非表示(＝消滅)にし、次ボスがいれば UpdateFieldBossVisual が再表示する。
+    /// </summary>
+    private IEnumerator PlayBossDefeatEffect()
+    {
+        currentMessage = "BOSS DEFEATED!";
+
+        GameObject enemyGo = GameObject.Find("Enemy");
+        if (enemyGo == null)
+        {
+            var e = FindObjectOfType<EnemyOnFieldController>();
+            if (e != null) enemyGo = e.gameObject;
+        }
+        cachedBossGo = enemyGo;   // 非アクティブ化後も参照できるよう保持
+        Camera cam = Camera.main;
+        Vector3 camHome = cam != null ? cam.transform.position : Vector3.zero;
+        Vector3 bossPos = enemyGo != null ? enemyGo.transform.position : camHome + Vector3.forward * 10f;
+        bossPos.z = 0f;
+        Vector3 bossScale0 = enemyGo != null ? enemyGo.transform.localScale : Vector3.one;
+        var renderers = enemyGo != null ? enemyGo.GetComponentsInChildren<SpriteRenderer>(true) : new SpriteRenderer[0];
+
+        // 0. ヒットストップ: 止めの一撃で一瞬完全停止(ボスを白くしてインパクト強調)
+        foreach (var sr in renderers) if (sr != null) sr.color = Color.white;
+        Time.timeScale = 0f;
+        Time.fixedDeltaTime = 0.0001f;
+        yield return new WaitForSecondsRealtime(0.18f);
+
+        // 1. ため: 軽いスロー＋ボスが白く点滅して小刻みに震える
+        Time.timeScale = 0.4f;
+        Time.fixedDeltaTime = 0.02f * Time.timeScale;
+        float t = 0f, pre = 0.55f;
+        while (t < pre)
+        {
+            t += Time.unscaledDeltaTime;
+            float k = Mathf.PingPong(t * 18f, 1f);
+            foreach (var sr in renderers)
+                if (sr != null) sr.color = Color.Lerp(Color.white, new Color(1f, 0.55f, 0.4f, 1f), k);
+            if (cam != null) cam.transform.position = camHome + (Vector3)(Random.insideUnitCircle * 0.08f);
+            yield return null;
+        }
+
+        // 2. 爆発の瞬間: 強いスロー＋破片を飛散
+        Time.timeScale = 0.08f;
+        Time.fixedDeltaTime = 0.02f * Time.timeScale;
+        float radius = Mathf.Max(0.6f, (bossScale0.x + bossScale0.y) * 0.5f);
+        GameObject explosion = SpawnExplosion(bossPos, radius);
+
+        // 3. ボスが膨張しながらフェードして消える＋大きめの画面揺れ
+        t = 0f; float dur = 0.7f;
+        while (t < dur)
+        {
+            t += Time.unscaledDeltaTime;
+            float p = Mathf.Clamp01(t / dur);
+            if (enemyGo != null) enemyGo.transform.localScale = bossScale0 * (1f + 0.7f * p);
+            foreach (var sr in renderers)
+                if (sr != null) { Color c = sr.color; c.a = 1f - p; sr.color = c; }
+            float shake = 0.35f * (1f - p);
+            if (cam != null) cam.transform.position = camHome + (Vector3)(Random.insideUnitCircle * shake);
+            yield return null;
+        }
+
+        // 4. 後始末: スロー解除・カメラ復帰・スケール復帰。
+        //    ボスは GameObject ごと非表示にする(個別 enabled は触らない。
+        //    FloatingCharacterMotion が元レンダラーを無効化した状態を壊さないため)。破片も破棄。
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
+        if (cam != null) cam.transform.position = camHome;
+        foreach (var sr in renderers)
+            if (sr != null) sr.color = Color.white;   // 次表示用に色を戻す
+        if (enemyGo != null)
+        {
+            enemyGo.transform.localScale = bossScale0;
+            enemyGo.SetActive(false);
+        }
+        if (explosion != null) Destroy(explosion);
+
+        yield return new WaitForSecondsRealtime(0.4f);
+    }
+
+    /// <summary>連戦の次ボス用に、Enemy 配下の全 SpriteRenderer(ルート＋Visual 子)を再表示し新スプライトを適用する。</summary>
+    private void UpdateFieldBossVisual(EnemyData boss)
+    {
+        // 破壊演出で非アクティブ化しているため、キャッシュ参照を最優先(Find/FindObjectOfType は非アクティブ不可)
+        GameObject enemyGo = cachedBossGo;
+        if (enemyGo == null) enemyGo = GameObject.Find("Enemy");
+        if (enemyGo == null)
+        {
+            var e = FindObjectOfType<EnemyOnFieldController>();
+            if (e != null) enemyGo = e.gameObject;
+        }
+        if (enemyGo == null)
+        {
+            Debug.LogWarning("[BattleResultPhase] Enemy オブジェクトが見つからず、次ボスの見た目を更新できません。");
+            return;
+        }
+        Sprite sprite = (boss != null && !string.IsNullOrEmpty(boss.bossSpriteName))
+            ? BossSpriteResolver.Load(boss.bossSpriteName) : null;
+        // 実際に見えているボス = FloatingCharacterMotion が作る浮遊用 "SpriteHolder"(ルートのコピー)。
+        // ルートはそのホルダーに差し替わって無効化されている。ここはそれらにだけスプライトを適用する。
+        // ※ "Visual" 子はスプライト参照が未解決(不可視)の飾り枠。ボス画像を入れると静止した二重表示になるため触らない。
+        // ※ sr.enabled も触らない(FloatingCharacterMotion の「ルート無効・ホルダー表示」状態を保つ)。
+        foreach (var sr in enemyGo.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (sr == null) continue;
+            if (sr.gameObject.name == "Visual") continue;   // 飾り枠(不可視)はボス画像に差し替えない
+            sr.color = Color.white;
+            if (sprite != null) sr.sprite = sprite;
+        }
+        enemyGo.SetActive(true);   // 表示/非表示は GameObject 単位で行う(個別 enabled 状態を保つ)
+    }
+
+    /// <summary>破壊演出用の破片(小さな円)を放射状に飛ばす。全破片を1つのコンテナ下にまとめて返す(呼び出し側で破棄)。</summary>
+    private GameObject SpawnExplosion(Vector3 center, float radius)
+    {
+        var container = new GameObject("BossExplosion");
+        container.transform.position = center;
+        var sprite = GetParticleSprite();
+        int n = 28;
+        for (int i = 0; i < n; i++)
+        {
+            var go = new GameObject("BossShard");
+            go.transform.SetParent(container.transform, false);
+            float size = Random.Range(0.15f, 0.42f) * radius;
+            go.transform.localScale = Vector3.one * size;
+
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            sr.sortingOrder = 1000;
+            sr.color = Color.Lerp(new Color(1f, 0.85f, 0.3f, 1f), new Color(1f, 0.4f, 0.2f, 1f), Random.value);
+
+            float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.25f, 0.25f);
+            float spd = Random.Range(3.5f, 9.5f) * Mathf.Max(0.6f, radius);
+            Vector2 vel = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * spd;
+
+            StartCoroutine(AnimateShard(go.transform, sr, vel));
+        }
+        return container;
+    }
+
+    private IEnumerator AnimateShard(Transform tr, SpriteRenderer sr, Vector2 vel)
+    {
+        float life = Random.Range(0.5f, 0.95f), t = 0f;
+        while (t < life && tr != null)
+        {
+            float dt = Time.unscaledDeltaTime;
+            t += dt;
+            vel *= 0.92f;          // 空気抵抗で減速
+            vel.y -= 7f * dt;      // 重力で落下
+            tr.position += (Vector3)(vel * dt);
+            tr.localScale *= (1f - 1.2f * dt);
+            if (sr != null) { Color c = sr.color; c.a = 1f - (t / life); sr.color = c; }
+            yield return null;
+        }
+        if (tr != null) Destroy(tr.gameObject);
+    }
+
+    private static Sprite _particleSprite;
+    private static Sprite GetParticleSprite()
+    {
+        if (_particleSprite != null) return _particleSprite;
+        int s = 16;
+        var tex = new Texture2D(s, s, TextureFormat.ARGB32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+        float c = (s - 1) * 0.5f, rad = c - 1f;
+        var px = new Color[s * s];
+        for (int y = 0; y < s; y++)
+            for (int x = 0; x < s; x++)
+            {
+                float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c));
+                px[y * s + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(rad - d + 0.5f));
+            }
+        tex.SetPixels(px);
+        tex.Apply();
+        _particleSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), s);
+        _particleSprite.name = "BossShardParticle";
+        return _particleSprite;
     }
 
     // GUI用アクセサ

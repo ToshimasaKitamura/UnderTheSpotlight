@@ -402,6 +402,35 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
             yield break;
         }
 
+        // ボスが画面外上部から降下＋着地で画面振動(次ボス再登場でも使い回す)
+        yield return StartCoroutine(BossDescendAndShake());
+
+        // ゲームスタート演出
+        yield return StartCoroutine(GameStartTextAnimation());
+
+        // 少し待ってから次のフェーズへ
+        yield return new WaitForSeconds(0.2f);
+
+        OnIntroComplete();
+    }
+
+    /// <summary>
+    /// ボスをボス枠へ「画面外上部から降下 → 着地で画面振動」で登場させる。
+    /// 初回登場(IntroSequence)と連戦の次ボス再登場(PlayBossReentry)で共用。
+    /// </summary>
+    private IEnumerator BossDescendAndShake()
+    {
+        if (bossController == null)
+        {
+            var e = FindObjectOfType<EnemyOnFieldController>();
+            if (e != null) bossController = e;
+        }
+        if (bossController == null || frameUI == null || mainCamera == null)
+        {
+            Debug.LogWarning("[BossIntroPhase] ボス/フレーム/カメラが無く、降下演出を再生できません。");
+            yield break;
+        }
+
         Transform bossTransform = bossController.transform;
 
         // フレームの位置を取得
@@ -454,16 +483,21 @@ public class BossIntroPhase : MonoBehaviour, IBattlePhase
 
         Debug.Log("[BossIntroPhase] ボス着地 - 画面振動開始");
 
-        // 着地時の画面振動
-        yield return StartCoroutine(ScreenShake());
+        // 着地時の画面振動(呼び出し元のコルーチン上で直接実行し、ホスト依存を避ける)
+        yield return ScreenShake();
+    }
 
-        // ゲームスタート演出
-        yield return StartCoroutine(GameStartTextAnimation());
-
-        // 少し待ってから次のフェーズへ
-        yield return new WaitForSeconds(0.2f);
-
-        OnIntroComplete();
+    /// <summary>
+    /// 連戦で次のボスへ替わったときの再登場演出(降下＋画面振動)。BattleResultPhase から呼ぶ。
+    /// 参照は実行時に解決し直し、振動の基準カメラ位置も現在値にする。
+    /// </summary>
+    public IEnumerator PlayBossReentry()
+    {
+        if (mainCamera == null) mainCamera = Camera.main;
+        if (frameUI == null) frameUI = FindObjectOfType<BattleFrameUI>();
+        if (bossController == null) bossController = FindObjectOfType<EnemyOnFieldController>();
+        if (mainCamera != null) originalCameraPosition = mainCamera.transform.position;
+        yield return BossDescendAndShake();
     }
 
     /// <summary>

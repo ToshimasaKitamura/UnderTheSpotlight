@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -60,6 +61,62 @@ public class SharedHpGaugeUI : MonoBehaviour
     public void SetVisible(bool visible)
     {
         isVisible = visible;
+        if (visible) { StopFade(); renderAlpha = 1f; }   // 再表示時は不透明に戻す
+    }
+
+    // ---- フェードアウト(弾幕フレームが閉じるのに合わせて消す) ----
+    private float renderAlpha = 1f;   // 全描画に掛ける透明度(1=不透明)
+    private Coroutine fadeRoutine;
+
+    /// <summary>指定秒でフェードインして表示する(弾幕開始の舞台が整ってから)。</summary>
+    public void FadeIn(float duration)
+    {
+        StopFade();
+        isVisible = true;
+        if (!gameObject.activeInHierarchy || duration <= 0f) { renderAlpha = 1f; return; }
+        renderAlpha = 0f;
+        fadeRoutine = StartCoroutine(FadeInCo(duration));
+    }
+
+    private IEnumerator FadeInCo(float dur)
+    {
+        float t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            renderAlpha = Mathf.Clamp01(t / dur);
+            yield return null;
+        }
+        renderAlpha = 1f;
+        fadeRoutine = null;
+    }
+
+    /// <summary>指定秒でフェードアウトして非表示にする(弾幕終了演出に同期)。</summary>
+    public void FadeOutAndHide(float duration)
+    {
+        if (!isVisible) return;
+        if (!gameObject.activeInHierarchy || duration <= 0f) { isVisible = false; renderAlpha = 1f; return; }
+        StopFade();
+        fadeRoutine = StartCoroutine(FadeOutCo(duration));
+    }
+
+    private void StopFade()
+    {
+        if (fadeRoutine != null) { StopCoroutine(fadeRoutine); fadeRoutine = null; }
+    }
+
+    private IEnumerator FadeOutCo(float dur)
+    {
+        float t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            renderAlpha = Mathf.Clamp01(1f - t / dur);
+            yield return null;
+        }
+        isVisible = false;
+        renderAlpha = 1f;   // 次回表示のためリセット
+        fadeRoutine = null;
     }
 
     void OnDestroy()
@@ -163,7 +220,11 @@ public class SharedHpGaugeUI : MonoBehaviour
 
     void OnGUI()
     {
-        if (!isVisible) return;
+        if (!isVisible || renderAlpha <= 0f) return;
+
+        // フェード用: 全描画にかかる透明度を GUI.color に乗せる(終了時に復元)
+        Color guiColorOrig = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, renderAlpha);
 
         // 画面中央下にバーを配置
         float x = (Screen.width - barWidth) / 2f;
@@ -193,7 +254,7 @@ public class SharedHpGaugeUI : MonoBehaviour
             // 危険時はバーを消さず色の明滅で警告する。
             // (フィルを描画ON/OFFすると残量が「1↔0」に点滅して見えるため、アルファのみ明滅させる)
             Color prevColor = GUI.color;
-            if (isDanger) GUI.color = blinkOn ? Color.white : new Color(1f, 1f, 1f, 0.5f);
+            if (isDanger) GUI.color = new Color(1f, 1f, 1f, (blinkOn ? 1f : 0.5f) * renderAlpha);
             GUI.DrawTexture(
                 new Rect(x + padding, y + padding, fillWidth, fillHeight),
                 barTex, ScaleMode.StretchToFill);
@@ -211,7 +272,7 @@ public class SharedHpGaugeUI : MonoBehaviour
             {
                 Color prevColor = GUI.color;
                 Color ghost = Color.Lerp(new Color(1f, 0.35f, 0.3f, 1f), Color.white, p); // 序盤=白→終盤=赤
-                ghost.a = p;
+                ghost.a = p * renderAlpha;
                 GUI.color = ghost;
                 GUI.DrawTexture(new Rect(gx, y + padding, gw, fillHeight), Texture2D.whiteTexture);
                 GUI.color = prevColor;
@@ -224,7 +285,7 @@ public class SharedHpGaugeUI : MonoBehaviour
             float innerW = barWidth - padding * 2;
             float segW = innerW / maxHp;
             Color prevColor = GUI.color;
-            GUI.color = borderColor;
+            GUI.color = new Color(borderColor.r, borderColor.g, borderColor.b, borderColor.a * renderAlpha);
             for (int i = 1; i < maxHp; i++)
             {
                 float lx = x + padding + segW * i - 1f;
@@ -240,5 +301,7 @@ public class SharedHpGaugeUI : MonoBehaviour
             float labelY = y + (barHeight - labelTexture.height) / 2f;
             GUI.DrawTexture(new Rect(labelX, labelY, labelTexture.width, labelTexture.height), labelTexture);
         }
+
+        GUI.color = guiColorOrig;   // IMGUI のグローバル色を復元
     }
 }

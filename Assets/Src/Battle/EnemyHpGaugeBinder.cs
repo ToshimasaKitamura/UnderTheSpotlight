@@ -64,7 +64,7 @@ public class EnemyHpGaugeBinder : MonoBehaviour
         foreach (var p in parts)
         {
             if (p == null || string.IsNullOrEmpty(p.id)) continue;
-            max += Mathf.Max(0, p.maxHp);
+            max += Mathf.Max(0, state.GetMaxHp(p.id));   // 人数スケール後の最大HPで比率を出す
             cur += state.GetCurrentHp(p.id);
         }
         float ratio = max > 0 ? Mathf.Clamp01((float)cur / max) : 0f;

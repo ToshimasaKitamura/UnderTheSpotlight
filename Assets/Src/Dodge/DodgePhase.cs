@@ -65,9 +65,8 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
         enabled = true;
         isActive = true;
 
-        // HPバーを表示
-        var hpGauge = FindObjectOfType<SharedHpGaugeUI>();
-        if (hpGauge != null) hpGauge.SetVisible(true);
+        // ※味方HPバーは弾幕フィールド/枠/自機が出そろってから表示する(下の EnterSequence 内)。
+        //   ここで出すと弾幕開始前に先出しされ「表示が早すぎる」ため。
 
         // 初期化と参照解決
         var enemiesRoot = GameObject.Find("Enemies")?.transform;
@@ -227,6 +226,10 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
             danmakuFrameView.SetVisible(true);
         }
 
+        // 味方HPバーは弾幕の舞台(フィールド/枠/自機)が整ってからフェードインで表示する。
+        var hpGauge = FindObjectOfType<SharedHpGaugeUI>();
+        if (hpGauge != null) hpGauge.FadeIn(0.35f);
+
         // 弾のクリップ範囲をフィールド境界に合わせる。これが無いと弾が枠外へ突き抜けてから消える。
         // ボスは中央フィールド内(y=3 付近)から撃つため、境界=フィールドで弾は枠際で消える。
         if (fieldSr != null)
@@ -269,7 +272,9 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
         // 1. 敵（弾幕用）の退場
         yield return enemyManager.ExitUpward();
 
-        // 2. 中央フィールド消失
+        // 2. 中央フィールド消失。味方HPゲージも枠が閉じるのに合わせてフェードアウトさせる。
+        var hpGauge = FindObjectOfType<SharedHpGaugeUI>();
+        if (hpGauge != null) hpGauge.FadeOutAndHide(visuals.fieldFadeOutDuration);
         yield return visuals.PlayFieldExit();
 
         // 3. 先に四隅の味方枠とボス枠を復活させる(枠が戻ってからキャラを出す)

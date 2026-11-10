@@ -161,10 +161,15 @@
 ### 部位システム (EnemyPart)
 - **id:** 部位ID（ユニーク）
 - **displayName:** 部位名
-- **maxHp:** 部位HP
+- **maxHp:** 部位HP（アセット値は**4人時の基準**。実効HPは参加人数でスケールする）
 - **position:** 攻撃範囲（Upper/Lower/Core）
 - **telegraphDialogue:** 予告セリフ（この部位を攻撃する予告）
 - **破壊時:** 部位HPが0になると破壊（選択不可）
+
+#### 参加人数によるボスHPスケール
+- 実効最大HP ＝ `アセットの maxHp × 人数倍率`（`EnemyRuntimeState.ResetAll` で適用、最低1）。
+- 人数倍率（1〜4人）＝ **0.25 / 0.5 / 0.75 / 1.0**。1人プレイはかなり低く（数発で撃破可能）、4人で元のHP。
+- 敵HPゲージ・部位選択チップの表示・回復上限もこのスケール後HPで統一（`EnemyRuntimeState.GetMaxHp`）。
 
 ### ランタイム状態 (EnemyRuntimeState)
 - 部位ごとの現在HP

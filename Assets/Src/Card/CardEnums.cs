@@ -38,6 +38,8 @@ public enum CardEffectType
     BuffGeneric,
     /// アクションコマンドの成功数が多いほど被ダメージ軽減
     SpecialSuccessScaling,
+    /// 【デバッグ】全生存部位に大ダメージ＝ボス即死。動作確認用。
+    DebugInstantKill,
 }
 
 /// <summary>
