@@ -256,7 +256,12 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
     {
         isActive = false;
 
-        // 0. 先に自機と弾を消す。
+        // 0-a. ボスの弾幕発射を止める。弾幕ボスは直後の ExitUpward で退場するまで生きているため、
+        //      止めずに弾を消すと、退場中(appearDuration 秒)に撃った弾が消されずに画面に残る。
+        if (enemyManager != null && enemyManager.DanmakuPattern != null)
+            enemyManager.DanmakuPattern.StopPattern();
+
+        // 0-b. 先に自機と弾を消す。
         //    フィールド/枠(danmakuFrameView)を畳む前に撤去しないと、「枠は消えたのに自機・弾だけ残る」ように見えるため。
         var dm = (enemyManager != null) ? enemyManager.danmakuManager : null;
         if (dm == null) dm = FindObjectOfType<DanmakuManager>();
