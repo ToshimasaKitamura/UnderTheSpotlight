@@ -1,0 +1,40 @@
+# Unity パッケージ側スクリプトの guid 一覧(check_missing_scripts.sh 用)
+# Library/PackageCache が無い環境(クラウド/CI)でのみ使う。Unity で開いた環境では PackageCache から正確に判定する。
+# 更新: Unity でプロジェクトを開いた後に  bash Tools/check_missing_scripts.sh --update-package-list
+# 形式: guid  # クラス名
+01614664b831546d2ae94a42149d80ac  # Unity.InputSystem::UnityEngine.InputSystem.UI.InputSystemUIInputModule
+06437c1ff663d574d9447842ba0a72e4  # ScreenSpaceLensFlare
+0b2db86121404754db890f4c8dfe81b2  # Bloom
+0cd44c1031e13a943bb63640046fad76  # UnityEngine.UI::UnityEngine.UI.CanvasScaler
+11145981673336645838492a2d98e247  # Renderer2D
+221518ef91623a7438a71fef23660601  # WhiteBalance
+29fa0085f50d5e54f8144f766051a691  # FilmGrain
+2ec995e51a6e251468d2a3fd8a686257  # UniversalRenderPipelineGlobalSettings
+306cc8c2b49d7114eaa3623786fc2126  # UnityEngine.UI::UnityEngine.UI.LayoutElement
+31a19414c41e5ae4aae2af33fee712f6  # UnityEngine.UI::UnityEngine.UI.Mask
+3eb4b772797da9440885e8bd939e9560  # ColorCurves
+5485954d14dfb9a4c8ead8edb0ded5b1  # LiftGammaGain
+558a8e2b6826cf840aae193990ba9f2e  # ShadowsMidtonesHighlights
+59f8146938fff824cb5fd77236b75775  # UnityEngine.UI::UnityEngine.UI.VerticalLayoutGroup
+5f7201a12d95ffc409449d95f23cf332  # UnityEngine.UI::UnityEngine.UI.Text
+66f335fb1ffd8684294ad653bf1c7564  # ColorAdjustments
+6bd486065ce11414fa40e631affc4900  # ProbeVolumesOptions
+70afe9e12c7a7ed47911bb608a23a8ff  # SplitToning
+76c392e42b5098c458856cdf6ecaaaa1  # UnityEngine.UI::UnityEngine.EventSystems.EventSystem
+81180773991d8724ab7f2d216912b564  # ChromaticAberration
+899c54efeace73346a0a16faa3afe726  # Vignette
+97c23e3b12dc18c42a140437e53d3951  # Tonemapping
+a79441f348de89743a2939f4d699eac1  # URP UniversalAdditionalCameraData
+bf2edee5c58d82540a51f03df9d42094  # UniversalRP
+c01700fd266d6914ababb731e09af2eb  # DepthOfField
+c5e1dc532bcb41949b58bc4f2abfbb7e  # LensDistortion
+ccf1aba9553839d41ae37dd52e9ebcce  # MotionBlur
+cdfbdbb87d3286943a057f7791b43141  # ChannelMixer
+cfabb0440166ab443bba8876756fdfa9  # UnityEngine.UI::UnityEngine.UI.Shadow
+d7fd9488000d3734a9e00ee676215985  # DefaultVolumeProfile
+dc42784cf147c0c48a680349fa168899  # UnityEngine.UI::UnityEngine.UI.GraphicRaycaster
+e021b4c809a781e468c2988c016ebbea  # ColorLookup
+e19747de3f5aca642ab2be37e372fb86  # UnityEngine.UI::UnityEngine.UI.Outline
+e651dbb3fbac04af2b8f5abf007ddc23  # Unity.Netcode.Runtime::Unity.Netcode.NetworkPrefabsList
+fb60a22f311433c4c962b888d1393f88  # PaniniProjection
+fe87c0e1cc204ed48ad3b37840f39efc  # UnityEngine.UI::UnityEngine.UI.Image
