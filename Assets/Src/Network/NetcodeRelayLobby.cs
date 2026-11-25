@@ -47,7 +47,8 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
 
     private NetworkManager _nm;
     private UnityTransport _utp;
-    private readonly List<ulong> _ordered = new List<ulong>(); // サーバ側の参加順(host が先頭)
+    // サーバ側の座席表: index=スロット(0=1P=ホスト)、値=clientId。抜けた人の席だけ空く(他の人のスロットは動かない)
+    private readonly ulong?[] _slots = new ulong?[4];
     private bool _hooked;
     private bool _handlersRegistered;
     private bool _leaving; // 自分から退出中(この間の自分の切断はエラー扱いしない)
@@ -82,7 +83,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
                 throw new Exception("NetworkManager.StartHost() が false を返しました(トランスポート設定を確認)。");
 
             RegisterHandlers();
-            if (!_ordered.Contains(_nm.LocalClientId)) _ordered.Add(_nm.LocalClientId);
+            AssignSlot(_nm.LocalClientId); // ホストは空いている最初の席=1P
             BroadcastRoster();
             SetActive();
         }
@@ -126,7 +127,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
         }
         catch (Exception e) { Debug.LogWarning("[NetcodeRelayLobby] Shutdown 中に例外: " + e.Message); }
 
-        _ordered.Clear();
+        Array.Clear(_slots, 0, _slots.Length);
         Array.Clear(SlotOccupied, 0, SlotOccupied.Length);
         Array.Clear(CursorNorm, 0, CursorNorm.Length);
         ConnectedCount = 0;
@@ -175,7 +176,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
 
     private void BroadcastCursors()
     {
-        int count = Mathf.Min(_ordered.Count, 4);
+        const int count = 4; // 席ごとに送る(空席は無視される)
         var w = new FastBufferWriter(sizeof(int) + count * 8, Allocator.Temp);
         using (w)
         {
@@ -188,8 +189,9 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
     private void OnClientCursor(ulong senderId, FastBufferReader reader)
     {
         reader.ReadValueSafe(out Vector2 v);
-        int slot = _ordered.IndexOf(senderId);
-        if (slot >= 0 && slot < 4) CursorNorm[slot] = v;
+        if (!TrySanitizeCursor(ref v)) return; // NaN/∞ など不正な値は受け付けない
+        int slot = SlotOf(senderId);
+        if (slot >= 0) CursorNorm[slot] = v;
     }
 
     private void OnCursors(ulong senderId, FastBufferReader reader)
@@ -199,6 +201,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
         for (int i = 0; i < count; i++)
         {
             reader.ReadValueSafe(out Vector2 v);
+            if (!TrySanitizeCursor(ref v)) continue;
             if (i != LocalSlot) CursorNorm[i] = v; // 自分の位置はローカル入力を優先(ジッタ回避)
         }
     }
@@ -265,7 +268,12 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
     {
         if (_nm.IsServer)
         {
-            if (!_ordered.Contains(clientId)) _ordered.Add(clientId);
+            if (SlotOf(clientId) < 0 && !AssignSlot(clientId))
+            {
+                Debug.LogWarning($"[NetcodeRelayLobby] 満員のため client {clientId} を切断します(最大4人)。");
+                _nm.DisconnectClient(clientId);
+                return;
+            }
             BroadcastRoster();
         }
         else if (clientId == _nm.LocalClientId)
@@ -279,7 +287,12 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
     {
         if (_nm.IsServer)
         {
-            _ordered.Remove(clientId);
+            int slot = SlotOf(clientId);
+            if (slot >= 0)
+            {
+                _slots[slot] = null;           // 抜けた人の席だけ空ける
+                CursorNorm[slot] = Vector2.zero;
+            }
             BroadcastRoster();
         }
         else if (clientId == _nm.LocalClientId)
@@ -297,41 +310,80 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
     {
         if (_nm == null || !_nm.IsServer || _nm.CustomMessagingManager == null) return;
 
-        int count = _ordered.Count;
-        var writer = new FastBufferWriter(sizeof(int) + count * sizeof(ulong), Allocator.Temp);
+        // 形式: int 席数(4) → 席ごとに [bool 埋まっているか, ulong clientId]
+        int count = _slots.Length;
+        var writer = new FastBufferWriter(sizeof(int) + count * (sizeof(bool) + sizeof(ulong)), Allocator.Temp);
         using (writer)
         {
             writer.WriteValueSafe(count);
-            for (int i = 0; i < count; i++) writer.WriteValueSafe(_ordered[i]);
+            for (int i = 0; i < count; i++)
+            {
+                writer.WriteValueSafe(_slots[i].HasValue);
+                writer.WriteValueSafe(_slots[i] ?? 0UL);
+            }
             _nm.CustomMessagingManager.SendNamedMessageToAll(RosterMsg, writer, NetworkDelivery.ReliableSequenced);
         }
-        ApplyRoster(_ordered.ToArray()); // サーバ自身にも反映
+        ApplyRoster(_slots); // サーバ自身にも反映
     }
 
     private void OnRosterMessage(ulong senderId, FastBufferReader reader)
     {
         reader.ReadValueSafe(out int count);
-        count = Mathf.Clamp(count, 0, 32);
-        var ids = new ulong[count];
-        for (int i = 0; i < count; i++) reader.ReadValueSafe(out ids[i]);
-        ApplyRoster(ids);
+        count = Mathf.Clamp(count, 0, 4);
+        var seats = new ulong?[4];
+        for (int i = 0; i < count; i++)
+        {
+            reader.ReadValueSafe(out bool has);
+            reader.ReadValueSafe(out ulong id);
+            seats[i] = has ? id : (ulong?)null;
+        }
+        ApplyRoster(seats);
         if (Status == NetLobbyStatus.Connecting) SetActive();
     }
 
-    private void ApplyRoster(ulong[] ordered)
+    private void ApplyRoster(ulong?[] seats)
     {
         Array.Clear(SlotOccupied, 0, SlotOccupied.Length);
-        int n = Mathf.Min(ordered.Length, 4);
-        for (int i = 0; i < n; i++) SlotOccupied[i] = true;
-        ConnectedCount = ordered.Length;
-
+        ConnectedCount = 0;
         LocalSlot = -1;
-        if (_nm != null)
+        for (int i = 0; i < SlotOccupied.Length && i < seats.Length; i++)
         {
-            int idx = Array.IndexOf(ordered, _nm.LocalClientId);
-            LocalSlot = (idx >= 0 && idx < 4) ? idx : -1;
+            if (!seats[i].HasValue) { CursorNorm[i] = Vector2.zero; continue; }
+            SlotOccupied[i] = true;
+            ConnectedCount++;
+            if (_nm != null && seats[i].Value == _nm.LocalClientId) LocalSlot = i;
         }
         Raise();
+    }
+
+    // ---- 座席表ヘルパ(サーバ側) ----
+
+    private int SlotOf(ulong clientId)
+    {
+        for (int i = 0; i < _slots.Length; i++)
+            if (_slots[i].HasValue && _slots[i].Value == clientId) return i;
+        return -1;
+    }
+
+    /// <summary>空いている最初の席に座らせる。満席なら false。</summary>
+    private bool AssignSlot(ulong clientId)
+    {
+        if (SlotOf(clientId) >= 0) return true;
+        for (int i = 0; i < _slots.Length; i++)
+        {
+            if (_slots[i].HasValue) continue;
+            _slots[i] = clientId;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>ネットから届いたカーソル座標を検証する。有限値でなければ捨て、0..1 に収める。</summary>
+    private static bool TrySanitizeCursor(ref Vector2 v)
+    {
+        if (float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsInfinity(v.x) || float.IsInfinity(v.y)) return false;
+        v = new Vector2(Mathf.Clamp01(v.x), Mathf.Clamp01(v.y));
+        return true;
     }
 
     // ---- 状態遷移ヘルパ ----
