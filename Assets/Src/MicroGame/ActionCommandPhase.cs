@@ -412,18 +412,26 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
                 var targets = partSelectPhase != null ? partSelectPhase.TargetPartIds : null;
                 string partId = (targets != null && playerIndex < targets.Count) ? targets[playerIndex] : null;
-                if (string.IsNullOrEmpty(partId))
+                // 部位未指定、または狙った部位が同じアクションコマンド中に他のプレイヤーに壊された場合は、
+                // 生存部位へ振り替える(壊れた部位に当てるとダメージが消えてしまうため)。
+                if (string.IsNullOrEmpty(partId) || enemyState.IsDestroyed(partId))
                 {
-                    // 部位未指定なら生存部位のいずれかへ
                     var alive = new List<string>(enemyState.EnumerateAliveParts());
                     partId = alive.Count > 0 ? alive[0] : null;
                 }
                 if (!string.IsNullOrEmpty(partId))
                 {
-                    enemyState.ApplyDamage(partId, dmg);
-                    hitLabel += $" -{dmg}";
-                    if (perPlayerDamage != null && playerIndex < perPlayerDamage.Length)
-                        perPlayerDamage[playerIndex] += dmg;
+                    // 実際にダメージが入ったときだけ表示・集計する
+                    if (enemyState.ApplyDamage(partId, dmg))
+                    {
+                        hitLabel += $" -{dmg}";
+                        if (perPlayerDamage != null && playerIndex < perPlayerDamage.Length)
+                            perPlayerDamage[playerIndex] += dmg;
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogError($"[ActionCommandPhase] P{playerIndex + 1} の攻撃を部位 '{partId}' に適用できませんでした。EnemyData '{(enemyState.enemyData != null ? enemyState.enemyData.name : "null")}' にこの部位 ID が無い可能性があります(PartSelect の候補と EnemyData.parts を確認してください)。");
+                    }
                 }
             }
         }
