@@ -49,7 +49,7 @@ public class GroupMashMicroGame : GroupRelayMicroGame
     private void UpdateFillVisual(int i)
     {
         if (fillRt == null || i < 0 || i >= fillRt.Length || fillRt[i] == null) return;
-        float w = (ZoneW - 6f) * fill[i];
+        float w = ZoneInnerW * fill[i]; // 領域の内寸いっぱいまで(以前は 3px 足りなかった)
         fillRt[i].sizeDelta = new Vector2(w, fillRt[i].sizeDelta.y);
     }
 }
