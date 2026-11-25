@@ -39,11 +39,25 @@ public class RunProgress : MonoBehaviour
     /// <summary>ステージクリア時(報酬集計後)。</summary>
     public event Action<StageData> OnStageCleared;
 
-    /// <summary>マップ画面で選んだステージで突入する。</summary>
-    public void BeginStage(StageData stage)
+    /// <summary>マップ画面で選んだステージで突入する(1体目から)。</summary>
+    public void BeginStage(StageData stage) => BeginStage(stage, 0);
+
+    /// <summary>
+    /// ステージに途中のボスから突入する(デバッグ室の「B2」や再挑戦など)。
+    /// 実際に戦うボス(stage.bosses[startBossIndex])と currentBossIndex を一致させるため、開始位置を受け取る。
+    /// (以前は常に 0 にしていたため、2体目から始めると弾幕の進行ランプが1体目扱いになり、
+    ///  撃破後は index が 1 になって同じボスがもう一度出ていた)
+    /// </summary>
+    public void BeginStage(StageData stage, int startBossIndex)
     {
+        int count = stage != null ? stage.BossCount : 0;
+        if (count > 0 && (startBossIndex < 0 || startBossIndex >= count))
+        {
+            Debug.LogError($"[RunProgress] 開始ボス番号 {startBossIndex} はステージ '{(stage != null ? stage.name : "null")}' の範囲外です(ボス {count} 体)。1体目から始めます。");
+            startBossIndex = 0;
+        }
         currentStage = stage;
-        currentBossIndex = 0;
+        currentBossIndex = Mathf.Max(0, startBossIndex);
         noDamageThisStage = true;
         bombsUsedThisStage = 0;
         OnStageBegin?.Invoke(stage);
