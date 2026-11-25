@@ -93,6 +93,9 @@ public class BossDanmakuPattern : MonoBehaviour
     [Tooltip("WeakenNextAttack 発動時の弾数倍率。")]
     [Range(0.1f, 1f)] public float weakenDensityMul = 0.6f;
 
+    private const float ReduceSpeedMul = 0.75f;   // ReducePatternSpeed の弾速倍率
+    private const float ReduceDensityMul = 0.7f;  // ReducePatternDensity の弾数倍率
+
     private Coroutine routine;
     // StartPattern 時に EnemyRuntimeState を見て弾速/弾数の実効値を確定する。
     private float effectiveBulletSpeed;
@@ -104,6 +107,10 @@ public class BossDanmakuPattern : MonoBehaviour
     private float speedRampPerBoss;
     private float densityRampPerBoss;
     private float rampSpeedMul = 1f; // StartPattern で確定する弾速倍率(フェーズ弾速にも乗せる)
+    // フェーズ駆動時に掛ける倍率(StartPattern で確定)。弾速=進行ランプ×部位破壊、弾数=部位破壊のみ
+    // (弾数ランプは偶奇=当たり方を壊すためフェーズには掛けない。部位破壊の弾数減は偶奇を保って掛ける)
+    private float phaseSpeedMul = 1f;
+    private float phaseDensityMul = 1f;
 
     // 時間変化フェーズ。非 null かつ要素があればフェーズ駆動、無ければ従来の単一パターン。
     private System.Collections.Generic.List<DanmakuPhase> phases;
@@ -148,7 +155,9 @@ public class BossDanmakuPattern : MonoBehaviour
         effectiveBulletsPerRing = Mathf.Max(1, Mathf.RoundToInt(bulletsPerRing * densityMul));
         shotCount = 0;
 
-        // 部位破壊効果を適用
+        // 部位破壊効果を適用(単一パターンとフェーズ駆動の両方に効かせる)
+        phaseSpeedMul = rampSpeedMul;
+        phaseDensityMul = 1f;
         var state = FindObjectOfType<EnemyRuntimeState>();
         if (state != null)
         {
@@ -156,15 +165,19 @@ public class BossDanmakuPattern : MonoBehaviour
             {
                 effectiveBulletSpeed *= weakenSpeedMul;
                 effectiveBulletsPerRing = Mathf.Max(4, Mathf.RoundToInt(effectiveBulletsPerRing * weakenDensityMul));
+                phaseSpeedMul *= weakenSpeedMul;
+                phaseDensityMul *= weakenDensityMul;
                 Debug.Log($"[BossDanmakuPattern] WeakenNextAttack 適用: speed={effectiveBulletSpeed:F1} density={effectiveBulletsPerRing}");
             }
             if (state.HasActiveEffect(PartDestructionEffect.ReducePatternSpeed))
             {
-                effectiveBulletSpeed *= 0.75f;
+                effectiveBulletSpeed *= ReduceSpeedMul;
+                phaseSpeedMul *= ReduceSpeedMul;
             }
             if (state.HasActiveEffect(PartDestructionEffect.ReducePatternDensity))
             {
-                effectiveBulletsPerRing = Mathf.Max(4, Mathf.RoundToInt(effectiveBulletsPerRing * 0.7f));
+                effectiveBulletsPerRing = Mathf.Max(4, Mathf.RoundToInt(effectiveBulletsPerRing * ReduceDensityMul));
+                phaseDensityMul *= ReduceDensityMul;
             }
         }
 
@@ -187,6 +200,15 @@ public class BossDanmakuPattern : MonoBehaviour
         // フェーズ指定があれば時間変化パターンを回す(局面を順に、各 duration 秒ずつ、ループ)
         if (phases != null && phases.Count > 0)
         {
+            // 有効な局面が1つも無いと、下のループが一度も待たずに回り続けて Unity が固まる
+            bool anyValid = false;
+            foreach (var ph in phases) if (ph != null) { anyValid = true; break; }
+            if (!anyValid)
+            {
+                Debug.LogError($"[BossDanmakuPattern] '{name}' の danmakuPhases がすべて null です。EnemyData の danmakuPhases を確認してください。弾幕を停止します。");
+                routine = null;
+                yield break;
+            }
             while (true)
             {
                 for (int pi = 0; pi < phases.Count; pi++)
@@ -279,8 +301,8 @@ public class BossDanmakuPattern : MonoBehaviour
     private void FirePhase(DanmakuPhase p, float rotDeg)
     {
         Vector3 origin = transform.position;
-        int n = Mathf.Max(1, p.wayCount);
-        float speed = p.bulletSpeed * rampSpeedMul;
+        int n = ScaleWayKeepParity(p.wayCount, phaseDensityMul);
+        float speed = p.bulletSpeed * phaseSpeedMul;
         float aimAng = AngleToPlayerDeg(origin);
 
         if (p.shape == DanmakuPatternType.AimedFan)
@@ -288,8 +310,10 @@ public class BossDanmakuPattern : MonoBehaviour
             float center = (p.aim == DanmakuAim.FixedDown) ? -90f : aimAng;
             center += rotDeg;
             float half = p.fanSpreadDeg * 0.5f;
-            // AntiAim: 扇の中心に隙間が来るよう半ステップずらす(偶数弾的)
-            float antiShift = (p.aim == DanmakuAim.AntiAim && n > 1) ? (p.fanSpreadDeg / (n - 1)) * 0.5f : 0f;
+            // AntiAim: 自機方向に隙間を作る。偶数 way の扇は中心がもともと隙間なのでずらさない。
+            // 奇数 way は中心に弾が来るので半ステップずらして隙間にする。
+            // (以前は偶数でもずらしていたため、逆に弾が自機方向へ来ていた)
+            float antiShift = (p.aim == DanmakuAim.AntiAim && n > 1 && n % 2 == 1) ? (p.fanSpreadDeg / (n - 1)) * 0.5f : 0f;
             for (int i = 0; i < n; i++)
             {
                 float t = (n == 1) ? 0.5f : i / (float)(n - 1);
@@ -308,6 +332,20 @@ public class BossDanmakuPattern : MonoBehaviour
             for (int i = 0; i < n; i++)
                 FirePhaseBullet(origin, start + i * step, speed, p);
         }
+    }
+
+    /// <summary>
+    /// way 数に倍率(減らす方向)を掛ける。偶奇(=自機への当たり方)は元の way 数と同じに保つ。
+    /// 下限: 元が4以下ならそのまま、それ以上は奇数なら3・偶数なら4(単一パターンの弾数下限4に合わせる)。
+    /// </summary>
+    private static int ScaleWayKeepParity(int way, float mul)
+    {
+        int w = Mathf.Max(1, way);
+        if (mul >= 0.999f) return w;
+        int floor = (w <= 4) ? w : ((w & 1) == 1 ? 3 : 4);
+        int target = Mathf.RoundToInt(w * mul);
+        if ((target & 1) != (w & 1)) target -= 1; // 偶奇を元に合わせる(減らす側へ)
+        return Mathf.Clamp(target, floor, w);      // floor と w は元と同じ偶奇なので、結果も偶奇を保つ
     }
 
     private void FirePhaseBullet(Vector3 origin, float angDeg, float speed, DanmakuPhase p)
