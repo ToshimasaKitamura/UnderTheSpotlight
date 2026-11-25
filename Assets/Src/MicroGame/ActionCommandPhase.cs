@@ -459,12 +459,20 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
                 hitLabel += " BUFF";
         }
 
-        // ヒットエフェクトを追加
-        float slotW = 320f;
-        float gap = 30f;
-        float total = playerCount * slotW + (playerCount - 1) * gap;
-        float startX = -total * 0.5f + slotW * 0.5f;
-        float x = startX + playerIndex * (slotW + gap);
+        // ヒットエフェクトを追加。位置は命中した領域(ミニゲームが記録した攻撃の始点)に合わせる。
+        // (以前は旧 GroupButton の配置(320px 間隔)で計算しており、今の領域とずれていた)
+        float x;
+        if (currentCtx != null && currentCtx.HasLastAttackScreenPos)
+        {
+            x = currentCtx.LastAttackScreenPos.x - Screen.width * 0.5f; // IMGUI の描画は画面中央からのずれで指定する
+        }
+        else
+        {
+            float slotW = 320f;
+            float gap = 30f;
+            float total = playerCount * slotW + (playerCount - 1) * gap;
+            x = -total * 0.5f + slotW * 0.5f + playerIndex * (slotW + gap);
+        }
 
         Color col = (playerColors != null && playerIndex < playerColors.Length)
             ? playerColors[playerIndex] : Color.white;
