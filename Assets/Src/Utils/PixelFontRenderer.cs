@@ -10,7 +10,6 @@ public static class PixelFontRenderer
 {
     // 基本の5x7ピクセルフォント定義
     private static Dictionary<char, byte[]> fontData;
-    private static Dictionary<string, Texture2D> textCache = new Dictionary<string, Texture2D>();
 
     // 美咲フォント(日本語用)
     private static Font misakiFont;
@@ -189,16 +188,13 @@ public static class PixelFontRenderer
     }
 
     /// <summary>
-    /// テキストをピクセルフォントのTexture2Dとして描画
+    /// テキストをピクセルフォントの Texture2D として描画する。
+    /// 返すテクスチャは毎回新しく作られ、**呼び出し側が所有する**。不要になったら <see cref="Release"/>
+    /// (または Destroy)で破棄すること。同じ文字列を毎フレーム描く場合は、呼び出し側で値が変わったときだけ作り直す。
+    /// (以前は共有キャッシュも同じテクスチャを持ち、キャッシュと呼び出し側の両方が破棄して表示が消えていた)
     /// </summary>
     public static Texture2D RenderText(string text, Color color, int scale = PIXEL_SCALE)
     {
-        string cacheKey = $"{text}_{ColorToHex(color)}_{scale}";
-        if (textCache.TryGetValue(cacheKey, out Texture2D cached) && cached != null)
-        {
-            return cached;
-        }
-
         // 日本語が含まれる場合は美咲フォントを使う
         bool hasJapanese = false;
         foreach (char c in text)
@@ -211,7 +207,6 @@ public static class PixelFontRenderer
         }
 
         Texture2D texture;
-        bool cacheable = true;
         if (hasJapanese && misakiFontLoaded)
         {
             // 美咲フォントは RenderTexture への GL 描画なので OnGUI 外(カードのスプライト焼き込み等)でも動く。
@@ -219,25 +214,13 @@ public static class PixelFontRenderer
             texture = RenderTextWithMisakiFont(text, color, scale);
             if (texture == null)
             {
-                // 代替の "?" はキャッシュしない(アトラス未準備などで一時失敗した場合に次回リトライできるように)
                 texture = RenderTextBitmap(text, color, scale);
-                cacheable = false;
                 Debug.LogWarning($"[PixelFontRenderer] 美咲フォント描画が空でした。ビットマップ代替('?')を使用: \"{text}\"");
             }
         }
         else
         {
             texture = RenderTextBitmap(text, color, scale);
-        }
-
-        // キャッシュに追加（最大200エントリ）。代替結果はキャッシュしない。
-        if (cacheable)
-        {
-            if (textCache.Count > 200)
-            {
-                ClearCache();
-            }
-            textCache[cacheKey] = texture;
         }
 
         return texture;
@@ -372,6 +355,7 @@ public static class PixelFontRenderer
         // 何も描けていない(GL が効かない環境等)なら null を返し、呼び出し側でビットマップにフォールバック。
         if (visible == 0)
         {
+            Release(texture); // 描けなかったテクスチャは呼び出し側に渡らないので、ここで破棄する(リーク防止)
             return null;
         }
 
@@ -507,10 +491,6 @@ public static class PixelFontRenderer
         }
     }
 
-    private static string ColorToHex(Color c)
-    {
-        return $"{(int)(c.r * 255):X2}{(int)(c.g * 255):X2}{(int)(c.b * 255):X2}{(int)(c.a * 255):X2}";
-    }
 
     /// <summary>
     /// ドット絵風の四角形を描画するTexture2Dを生成
@@ -623,14 +603,12 @@ public static class PixelFontRenderer
     }
 
     /// <summary>
-    /// キャッシュをクリア
+    /// RenderText 等で作ったテクスチャを破棄する。再生中は Destroy、エディタの非再生時は DestroyImmediate。
     /// </summary>
-    public static void ClearCache()
+    public static void Release(Texture2D tex)
     {
-        foreach (var tex in textCache.Values)
-        {
-            if (tex != null) Object.Destroy(tex);
-        }
-        textCache.Clear();
+        if (tex == null) return;
+        if (Application.isPlaying) Object.Destroy(tex);
+        else Object.DestroyImmediate(tex);
     }
 }
