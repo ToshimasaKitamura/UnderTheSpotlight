@@ -98,6 +98,9 @@ Check 合格かつ Act 完了で初めて「完了」。
 - 日本語ラベルはインポート済みフォント（`Resources/Fonts/misaki_gothic`）を使う。共通処理は `GameFont.Body()` を経由する
 - 動的フォントを GL/低レベルで自前描画するときは **`RequestCharactersInTexture` → `material.SetPass(0)` → 描画** の順を厳守（逆順だと再構築前の古いアトラスをバインドし、新規文字だけ空描画＝「?」化する）
 
+### 時間(timeScale / fixedDeltaTime)
+- `Time.timeScale` と `Time.fixedDeltaTime` はシーンを跨いで残るグローバル値。演出で変えたら、正常終了・`Exit`・`OnDestroy` のすべてで元に戻す(シーン直接切替では `Exit` が呼ばれない)
+
 ### シリアライズ
 - `[SerializeField]` の既定値をコードで変えても、既にシーン/プレハブに保存済みのインスタンスには反映されない
 - コード変更を必ず効かせたい調整値は、非シリアライズの private フィールドにする

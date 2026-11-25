@@ -521,7 +521,10 @@ public class BattleStateMachine : MonoBehaviour
         // 【デバッグ】バトル中はいつでも Esc でデバッグ室へ入れる。製品ビルドでは無効(DebugFeatures)。
         if (DebugFeatures.Enabled && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
+            // 撃破演出(ヒットストップ/スロー)の途中でも抜けられるので、時間の設定を必ず通常に戻す。
+            // fixedDeltaTime を戻さないと 0.0001 のまま次のシーンへ持ち越され、物理更新が暴走する。
             Time.timeScale = 1f;
+            Time.fixedDeltaTime = 0.02f;
             DebugLaunch.Clear();
             UnityEngine.SceneManagement.SceneManager.LoadScene("DebugRoomScene");
             return;
