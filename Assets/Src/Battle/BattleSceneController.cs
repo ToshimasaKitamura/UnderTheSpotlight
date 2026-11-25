@@ -33,25 +33,31 @@ public class BattleSceneController : MonoBehaviour
     private void Start()
     {
         // GameSceneManager からステージデータを取得
-        if (GameSceneManager.Instance != null && GameSceneManager.Instance.selectedStage != null)
+        if (GameSceneManager.Instance != null)
         {
             var stage = GameSceneManager.Instance.selectedStage;
             var bossIdx = GameSceneManager.Instance.bossIndex;
 
+            // デバッグ: ステージ/ボス未割当の弾種・パターン検証用 EnemyData を優先
+            EnemyData chosen = DebugLaunch.OverrideEnemy;
+            if (chosen == null && stage != null && stage.bosses != null && stage.bosses.Count > bossIdx)
+                chosen = stage.bosses[bossIdx];
+
             // EnemyRuntimeState にボスデータを設定
-            if (enemyState != null && stage.bosses != null && stage.bosses.Count > bossIdx)
+            if (enemyState != null && chosen != null)
             {
-                enemyState.enemyData = stage.bosses[bossIdx];
+                enemyState.enemyData = chosen;
                 enemyState.ResetAll();
             }
 
-            // RunProgress に記録
-            if (runProgress != null)
+            // RunProgress に記録(ステージがある場合のみ。上書き時は連戦ランプを乗せない=bossIndex 0)
+            if (runProgress != null && stage != null)
             {
                 runProgress.BeginStage(stage);
             }
 
-            Debug.Log($"[BattleSceneController] バトル開始: {stage.displayName}, Boss #{bossIdx}");
+            string label = chosen != null ? chosen.displayName : "(none)";
+            Debug.Log($"[BattleSceneController] バトル開始: boss={label}, override={(DebugLaunch.OverrideEnemy != null)}, stage={(stage != null ? stage.displayName : "null")}");
         }
     }
 

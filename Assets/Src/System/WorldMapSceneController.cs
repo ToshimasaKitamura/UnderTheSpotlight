@@ -205,6 +205,21 @@ public class WorldMapSceneController : MonoBehaviour
         return -1;
     }
 
+    /// <summary>
+    /// 【デバッグ】出撃の瞬間に押されている数字キー(1〜4 / テンキー1〜4)を人数として返す。
+    /// 押されていなければ 0。複数押しは大きい方を優先。
+    /// </summary>
+    private static int ReadDebugPlayerCountHeld()
+    {
+        var kb = Keyboard.current;
+        if (kb == null) return 0;
+        if (kb.digit4Key.isPressed || kb.numpad4Key.isPressed) return 4;
+        if (kb.digit3Key.isPressed || kb.numpad3Key.isPressed) return 3;
+        if (kb.digit2Key.isPressed || kb.numpad2Key.isPressed) return 2;
+        if (kb.digit1Key.isPressed || kb.numpad1Key.isPressed) return 1;
+        return 0;
+    }
+
     private static int LocalNetSlot()
         => NetworkLobby.Available ? NetworkLobby.Instance.LocalSlot : -1;
 
@@ -264,6 +279,16 @@ public class WorldMapSceneController : MonoBehaviour
             return;
         }
         launching = true;
+
+        // 【デバッグ】出撃時に数字キー(1〜4)を押していれば、その人数(P1〜Pn)で強制的にプレイする。
+        // 全員を自分で操作するホットシート用。募集状況を上書きする。
+        int debugCount = ReadDebugPlayerCountHeld();
+        if (debugCount > 0)
+        {
+            for (int p = 0; p < MaxPlayers; p++) joined[p] = (p < debugCount);
+            Debug.Log($"[WorldMapSceneController] デバッグ: 数字キーで {debugCount} 人プレイに設定");
+        }
+
         Debug.Log($"[WorldMapSceneController] 集合完了 → 出撃: {stage.displayName} (参加 {CountJoined()} 人)");
 
         // 募集結果を引き継ぐ

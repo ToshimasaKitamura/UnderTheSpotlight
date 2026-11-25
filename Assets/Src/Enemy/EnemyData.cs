@@ -46,6 +46,10 @@ public class EnemyData : ScriptableObject
     [Tooltip("この数だけ弾を撃つごとに1発を回復弾(Heal)にする。0で無効。ボスの自己回復ギミック用。")]
     public int danmakuHealEveryNShots = 0;
 
+    [Tooltip("時間変化する弾幕フェーズ列。1つ以上あると上の単一パラメータより優先され、" +
+             "局面を順に(各 duration 秒)ループする。自機狙い→破裂して自機外し全方位、等の作り込み用。")]
+    public List<DanmakuPhase> danmakuPhases = new List<DanmakuPhase>();
+
     /// <summary>id で部位を引く。見つからなければ null。</summary>
     public EnemyPart FindPart(string partId)
     {

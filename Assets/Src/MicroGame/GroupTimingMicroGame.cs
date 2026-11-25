@@ -3,91 +3,92 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// アクションコマンド「タイミング！」(ちぢむリング)。
-/// 大きなリングが中央の的(丸)に向かってちぢんでくる。リングが的の縁に重なった瞬間に SPACE で命中。
-/// 押せるのは手番につき1回。早すぎ/遅すぎ(リングが的を通り過ぎる)/時間切れ は不発。
-/// 難易度: speedMul=ちぢむ速さ / rangeScale=許容のずれ幅 / interference=リングが点滅して見えにくい。
+/// グループ型アクションコマンド「タイミング！」。
+/// 手番プレイヤーの領域を白いマーカーが左右に往復する。光る「ねらい枠」に重なった瞬間に SPACE で命中。
+/// 押せるのは手番につき1回だけ。外したら不発、時間切れも不発。
+/// 難易度: speedMul=マーカー速度 / rangeScale=ねらい枠の広さ / interference=マーカーの点滅(見えにくさ)。
 /// </summary>
 public class GroupTimingMicroGame : GroupRelayMicroGame
 {
     public override string DisplayName => "タイミング！";
-    protected override string PromptText => "リングが まとに かさなったら SPACE！";
+    protected override string PromptText => "ひかる わくで SPACE！";
 
-    private const float TargetD = 120f;   // 的の直径
-    private const float StartD = 270f;    // リングの出現時の直径
+    private const float MarkerW = 6f;
 
-    private Image targetFill;
-    private Image targetRing;
-    private Image toleranceOuter;
-    private Image toleranceInner;
-    private Image approach;
-
-    private float shrinkPerSec;   // 直径の縮小速度(px/秒)
-    private float tolerance;      // 許容する直径のずれ(px)
+    private RectTransform[] markerRt;
+    private Image[] markerImg;
+    private Image[] windowImg;
+    private float[] windowCenter;   // ねらい枠の中心(領域幅に対する 0..1)
+    private float windowHalf;       // ねらい枠の半幅(0..1)
+    private float sweepSpeed;       // マーカー速度(領域幅/秒)
     private float interference;
-    private System.Random rng;
 
-    private float delay;          // リングが出るまでの待ち(毎手番ランダム。読まれないように)
-    private float d;
-    private bool pressed;
+    private float markerPos;        // 0..1
+    private float markerDir;
+    private bool stopped;
 
     protected override void OnSetup(MicroGameContext c)
     {
-        shrinkPerSec = 120f * Mathf.Max(0.8f, c.speedMul); // 下限0.8: 最遅でも(出現待ち0.6秒込み)約2.2秒で的に届き、制限時間(3秒以上)に収まる
-        tolerance = Mathf.Clamp(24f * c.rangeScale / Mathf.Max(1f, 0.8f + 0.2f * c.speedMul), 10f, 40f);
+        sweepSpeed = 0.9f * Mathf.Max(0.5f, c.speedMul);
+        // ねらい枠は速いほど狭く。rangeScale で広げられる(カード効果ノブ)。
+        windowHalf = Mathf.Clamp(0.11f * c.rangeScale / Mathf.Max(1f, 0.8f + 0.2f * c.speedMul), 0.04f, 0.2f);
         interference = Mathf.Clamp01(c.interference);
-        rng = c.rng ?? new System.Random();
+
+        markerRt = new RectTransform[PlayerCount];
+        markerImg = new Image[PlayerCount];
+        windowImg = new Image[PlayerCount];
+        windowCenter = new float[PlayerCount];
+        var rng = c.rng ?? new System.Random();
+        for (int i = 0; i < PlayerCount; i++)
+        {
+            // 左端付近は開始直後に重なってしまうため、中央〜右寄りに置く
+            windowCenter[i] = Mathf.Lerp(0.35f + windowHalf, 0.95f - windowHalf, (float)rng.NextDouble());
+        }
     }
 
-    protected override void BuildPlay(RectTransform play)
+    protected override void BuildZone(int i, RectTransform zone, Color col)
     {
-        targetFill = Shape(play, "TargetFill", AcShapes.Circle(), Color.white, Vector2.zero, new Vector2(TargetD, TargetD));
-        toleranceOuter = Shape(play, "TolOuter", AcShapes.Ring(), Color.white, Vector2.zero, Vector2.zero);
-        toleranceInner = Shape(play, "TolInner", AcShapes.Ring(), Color.white, Vector2.zero, Vector2.zero);
-        targetRing = Shape(play, "TargetRing", AcShapes.Ring(), Color.white, Vector2.zero, new Vector2(TargetD, TargetD));
-        approach = Shape(play, "Approach", AcShapes.Ring(), Color.white, Vector2.zero, new Vector2(StartD, StartD));
+        float w = ZoneInnerW;
+        float h = ZoneInnerH;
+
+        var win = AcUi.Image(zone, $"Window{i}", new Color(col.r, col.g, col.b, 0.85f));
+        PlaceInZone(win.rectTransform, windowCenter[i] * w, 0f, windowHalf * 2f * w, h - 6f);
+        windowImg[i] = win;
+
+        var m = AcUi.Image(zone, $"Marker{i}", new Color(1f, 1f, 1f, 0f)); // 手番まで非表示
+        PlaceInZone(m.rectTransform, 0f, 0f, MarkerW, h + 4f);
+        markerRt[i] = m.rectTransform;
+        markerImg[i] = m;
     }
 
-    protected override void OnTurnStart(int i, Color col)
+    protected override void OnTurnStart(int i)
     {
-        delay = 0.15f + 0.45f * (float)rng.NextDouble();
-        d = StartD;
-        pressed = false;
-
-        targetFill.color = WithAlpha(col, 0.35f);
-        targetRing.color = col;
-        // 許容範囲を薄いリング2本で示す
-        toleranceOuter.rectTransform.sizeDelta = new Vector2(TargetD + tolerance, TargetD + tolerance);
-        toleranceInner.rectTransform.sizeDelta = new Vector2(TargetD - tolerance, TargetD - tolerance);
-        toleranceOuter.color = WithAlpha(Color.white, 0.25f);
-        toleranceInner.color = WithAlpha(Color.white, 0.25f);
-        approach.color = WithAlpha(Color.white, 0f); // 出現まで隠す
-        approach.rectTransform.sizeDelta = new Vector2(StartD, StartD);
+        markerPos = 0f;
+        markerDir = 1f;
+        stopped = false;
+        SetMarker(i, 1f);
     }
 
     protected override TurnResult TickTurn(int i, float dt)
     {
-        if (pressed) return TurnResult.Continue;
+        if (stopped) return TurnResult.Continue;
 
-        bool visible = PlayerTime >= delay;
-        if (visible)
-        {
-            d -= shrinkPerSec * dt;
-            approach.rectTransform.sizeDelta = new Vector2(Mathf.Max(0f, d), Mathf.Max(0f, d));
-            float a = 1f;
-            if (interference > 0f && Mathf.Sin(PlayerTime * 13f) > 0.3f) a = 1f - 0.85f * interference;
-            approach.color = WithAlpha(Color.white, a);
+        markerPos += markerDir * sweepSpeed * dt;
+        if (markerPos >= 1f) { markerPos = 2f - markerPos; markerDir = -1f; }
+        if (markerPos <= 0f) { markerPos = -markerPos; markerDir = 1f; }
+        markerPos = Mathf.Clamp01(markerPos);
 
-            // 的を通り過ぎた=遅すぎ
-            if (d < TargetD - tolerance) return TurnResult.Miss;
-        }
+        // 視覚妨害: 一定周期でマーカーが薄くなる
+        float alpha = 1f;
+        if (interference > 0f && Mathf.Sin(PlayerTime * 11f) > 0.3f) alpha = 1f - 0.85f * interference;
+        SetMarker(i, alpha);
 
         var kb = Keyboard.current;
         if (kb != null && kb.spaceKey.wasPressedThisFrame)
         {
-            pressed = true;
-            // 出現前に押した場合も「早すぎ」で不発
-            bool hit = visible && Mathf.Abs(d - TargetD) <= tolerance;
+            stopped = true;
+            SetMarker(i, 1f);
+            bool hit = Mathf.Abs(markerPos - windowCenter[i]) <= windowHalf;
             return hit ? TurnResult.Hit : TurnResult.Miss;
         }
         return TurnResult.Continue;
@@ -95,15 +96,19 @@ public class GroupTimingMicroGame : GroupRelayMicroGame
 
     protected override void OnTurnEnd(int i, bool hit)
     {
-        if (hit)
+        // 止めた位置を残して見せる。外したら枠を暗くする
+        if (!hit && windowImg[i] != null)
         {
-            targetRing.color = HitColor;
-            approach.color = HitColor;
+            var c = windowImg[i].color;
+            windowImg[i].color = new Color(c.r * 0.4f, c.g * 0.4f, c.b * 0.4f, 0.6f);
         }
-        else
-        {
-            targetFill.color = WithAlpha(MissColor, 0.25f);
-            approach.color = WithAlpha(new Color(1f, 0.35f, 0.35f, 1f), 0.9f);
-        }
+        if (markerImg[i] != null) markerImg[i].color = hit ? new Color(1f, 0.92f, 0.35f, 1f) : new Color(1f, 0.35f, 0.35f, 1f);
+    }
+
+    private void SetMarker(int i, float alpha)
+    {
+        if (markerRt[i] == null) return;
+        markerRt[i].anchoredPosition = new Vector2(markerPos * ZoneInnerW, 0f);
+        if (markerImg[i] != null) markerImg[i].color = new Color(1f, 1f, 1f, alpha);
     }
 }

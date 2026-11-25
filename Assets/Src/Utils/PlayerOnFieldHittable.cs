@@ -20,9 +20,15 @@ public class PlayerOnFieldHittable : MonoBehaviour
 
     public bool IsInvulnerable => Time.time < invulnerableUntil;
 
+    /// <summary>
+    /// 弾幕デバッグ(デバッグ室の弾幕/弾種検証)中は被弾しない。
+    /// 自機を操作せず弾幕を観察するため、ここで被弾を無効化する(弾は DanmakuManager 側ですり抜ける)。
+    /// </summary>
+    public bool IsDebugInvincible => DebugLaunch.Current == DebugLaunch.Mode.Danmaku;
+
     public void NotifyHit()
     {
-        if (IsInvulnerable) return;
+        if (IsDebugInvincible || IsInvulnerable) return;
         invulnerableUntil = Time.time + invulnerabilityDuration;
         Hit?.Invoke(this);
     }

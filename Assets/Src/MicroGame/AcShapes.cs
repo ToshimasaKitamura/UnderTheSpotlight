@@ -12,6 +12,14 @@ public static class AcShapes
     private static Sprite ring;
     private static Sprite triangle;
     private static Sprite square;
+    private static Sprite roundedRect;
+
+    /// <summary>角丸の矩形(9スライス対応)。パネルやゲージの土台に使うとおしゃれに見える。</summary>
+    public static Sprite RoundedRect()
+    {
+        if (roundedRect == null) roundedRect = MakeRounded("AcRoundedRect", 26);
+        return roundedRect;
+    }
 
     /// <summary>白い四角(Image.Type.Filled でゲージを作るときの素材)。</summary>
     public static Sprite Square()
@@ -39,6 +47,38 @@ public static class AcShapes
     {
         if (triangle == null) triangle = Make("AcTriangle", TriangleAlpha);
         return triangle;
+    }
+
+    /// <summary>角丸矩形スプライトを生成。border=radius で 9スライスし、どの大きさでも角が崩れない。</summary>
+    private static Sprite MakeRounded(string name, int radius)
+    {
+        var tex = new Texture2D(Size, Size, TextureFormat.RGBA32, false);
+        tex.name = name;
+        tex.filterMode = FilterMode.Bilinear;
+        tex.wrapMode = TextureWrapMode.Clamp;
+        float half = Size * 0.5f;
+        var pxArr = new Color32[Size * Size];
+        for (int y = 0; y < Size; y++)
+        {
+            for (int x = 0; x < Size; x++)
+            {
+                // 角丸矩形の符号付き距離(直線の辺＋角だけ丸める)
+                float dx = Mathf.Abs(x + 0.5f - half) - (half - radius);
+                float dy = Mathf.Abs(y + 0.5f - half) - (half - radius);
+                float ox = Mathf.Max(dx, 0f), oy = Mathf.Max(dy, 0f);
+                float outside = Mathf.Sqrt(ox * ox + oy * oy);
+                float inside = Mathf.Min(Mathf.Max(dx, dy), 0f);
+                float sdf = outside + inside - radius;   // <0 が内側
+                float a = Mathf.Clamp01(-sdf + 0.5f);
+                pxArr[y * Size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+            }
+        }
+        tex.SetPixels32(pxArr);
+        tex.Apply();
+        var border = new Vector4(radius, radius, radius, radius);
+        var s = Sprite.Create(tex, new Rect(0, 0, Size, Size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+        s.name = name;
+        return s;
     }
 
     private delegate float AlphaFunc(float x, float y);

@@ -263,8 +263,13 @@ public class BattleStateMachine : MonoBehaviour
         Debug.Log("[BattleStateMachine] Start 開始");
         Debug.Log($"[BattleStateMachine] initialState (before override): {initialState} (int: {(int)initialState})");
 
-        // 強制的にBossIntroから開始（シーンのシリアライズ値が古い場合の対策）
-        initialState = State.BossIntro;
+        // 開始フェーズ。通常は BossIntro。デバッグ室からの単体チェックでは指定フェーズから開始する。
+        switch (DebugLaunch.Current)
+        {
+            case DebugLaunch.Mode.Danmaku:       initialState = State.Dodge; break;
+            case DebugLaunch.Mode.ActionCommand: initialState = State.ActionCommand; break;
+            default:                             initialState = State.BossIntro; break; // None / Character
+        }
         Debug.Log($"[BattleStateMachine] initialState (after override): {initialState}");
         Debug.Log($"[BattleStateMachine] bossIntroPhase: {(bossIntroPhase != null ? "OK" : "NULL")}");
         Debug.Log($"[BattleStateMachine] cardSelectPhase: {(cardSelectPhase != null ? "OK" : "NULL")}");
@@ -513,6 +518,15 @@ public class BattleStateMachine : MonoBehaviour
 
     private void Update()
     {
+        // バトル中はいつでも Esc でデバッグ室へ入れる(通常プレイからでも可)
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            Time.timeScale = 1f;
+            DebugLaunch.Clear();
+            UnityEngine.SceneManagement.SceneManager.LoadScene("DebugRoomScene");
+            return;
+        }
+
         // フェーズ Tick 中に ChangeState されたかを検知するため遷移前の状態を保持
         State prevState = currentState;
 
@@ -562,7 +576,12 @@ public class BattleStateMachine : MonoBehaviour
     /// </summary>
     public void ChangeState(State newState)
     {
-        if (currentPhase != null && newState == currentState) return;
+        // デバッグ室の単体チェック: 指定フェーズだけをループ(他フェーズへは遷移させず、同フェーズを再入)
+        if (DebugLaunch.LoopsPhase)
+            newState = (DebugLaunch.Current == DebugLaunch.Mode.Danmaku) ? State.Dodge : State.ActionCommand;
+
+        // 通常は同じ状態への遷移は無視。ループモードだけは再入して繰り返す。
+        if (currentPhase != null && newState == currentState && !DebugLaunch.LoopsPhase) return;
 
         // 現在のフェーズを抜ける
         currentPhase?.Exit();

@@ -187,23 +187,24 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         // アクションコマンドはグループ型(全員で1回・リレー式)の登録簿から「順番に」選ぶ。
         // れんだ→タイミング→ためて はなせ→じゅんばんに→れんだ… とフェーズのたびに次へ進む。
         // debugForceGroupGame >= 0 のときはその番号に固定(動作確認用)。
-        var groupRegistry = MicroGameRegistry.CreateGroupDefault();
+        // 初期の「横ゲージ」方式: 1本のバーを人数分の領域に分割し、P1→P2→… と手番で自分の領域を操作する。
+        // 種目(れんだ/タイミング/ためて/じゅんばんに)はフェーズごとに順番に進む。
+        var registry = MicroGameRegistry.CreateGroupDefault();
         string chosenName = "";
-        IMicroGame game;
+        int chosenIndex;
         if (debugForceGroupGame >= 0)
         {
-            game = groupRegistry.Create(debugForceGroupGame, out chosenName);
+            chosenIndex = registry.Count > 0 ? (debugForceGroupGame % registry.Count) : 0;
         }
         else
         {
-            game = groupRegistry.Count > 0
-                ? groupRegistry.Create(nextGroupGameIndex % groupRegistry.Count, out chosenName)
-                : null;
+            chosenIndex = registry.Count > 0 ? (nextGroupGameIndex % registry.Count) : 0;
             nextGroupGameIndex++;
         }
+        IMicroGame game = registry.Count > 0 ? registry.Create(chosenIndex, out chosenName) : null;
         if (game == null)
         {
-            Debug.LogError($"[ActionCommandPhase] アクションコマンドを生成できませんでした(debugForceGroupGame={debugForceGroupGame}, 登録数={groupRegistry.Count})。BattleResult へ進みます。");
+            Debug.LogError($"[ActionCommandPhase] アクションコマンドを生成できませんでした(index={chosenIndex}, 登録数={registry.Count})。BattleResult へ進みます。");
             routine = null;
             if (stateMachine != null) stateMachine.ChangeState(BattleStateMachine.State.BattleResult);
             yield break;
@@ -302,8 +303,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
                     OnPlayerAttack = HandlePlayerAttack,
                 };
 
-                // 2回目以降も同じスペース連打(Mash)を再生成(Cleanup/Begin のライフサイクルのため)
-                if (p > 0) game = new MashMicroGame();
+                // 各プレイヤーごとに同じ種目を作り直す(Cleanup/Begin のライフサイクルのため)
+                if (p > 0) game = registry.Create(chosenIndex, out _);
 
                 game.Begin(ctx);
                 bool done = false;

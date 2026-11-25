@@ -82,3 +82,7 @@ Temp_SpritePreview/
 # Unity recovery dump
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta
+
+# デバッグ/検証の一時生成物(ゲーム本体ではない)
+/Screenshots/
+/AgentScripts/

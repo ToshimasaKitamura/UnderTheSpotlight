@@ -77,13 +77,9 @@ public class MicroGameIMGUIHelper : MonoBehaviour
             DrawTimer();
         }
 
-        // 単一テキストモード
-        if (getTextFunc != null)
-        {
-            DrawSingleText();
-        }
-        // 複数テキストモード
-        else if (getMultiTextFunc != null)
+        // 操作説明(「SPACE!」等)の小さい文字は視認性が悪いので描画しない。
+        // 複数テキストモード(グループ型)は従来どおり。
+        if (getTextFunc == null && getMultiTextFunc != null)
         {
             DrawMultiText();
         }

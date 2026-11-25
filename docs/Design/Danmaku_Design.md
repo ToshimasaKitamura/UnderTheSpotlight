@@ -8,11 +8,15 @@
 | 要素 | 実装 |
 |---|---|
 | 弾の実体 | [`Bullet`](../../Assets/Src/Utils/Bullet.cs)（`velocity`/`radius`/`kind`/`healAmount`） |
-| 弾の生成・衝突・回復弾処理 | [`DanmakuManager`](../../Assets/Src/Utils/DanmakuManager.cs) |
+| 弾の大きさ・形状 | [`BulletSize`](../../Assets/Src/Utils/Bullet.cs)（Small/Medium/Large）・[`BulletShape`](../../Assets/Src/Utils/Bullet.cs)（Round/Kunai） |
+| 弾の生成・衝突・回復弾処理・見た目 | [`DanmakuManager`](../../Assets/Src/Utils/DanmakuManager.cs)（`SpawnBullet(pos,vel,kind,size,shape)`） |
 | ボスの弾幕パターン | [`BossDanmakuPattern`](../../Assets/Src/Enemy/BossDanmakuPattern.cs) |
+| 狙い方 | [`DanmakuAim`](../../Assets/Src/Enemy/BossDanmakuPattern.cs)（Aimed/AntiAim/FixedDown） |
+| 時間変化フェーズ | [`DanmakuPhase`](../../Assets/Src/Enemy/BossDanmakuPattern.cs) ＋ [`EnemyData`](../../Assets/Src/Enemy/EnemyData.cs) の `danmakuPhases` |
 | パターン起動 | [`DodgeEnemyManager`](../../Assets/Src/Dodge/DodgeEnemyManager.cs) |
 | ボス別の弾幕数値 | [`EnemyData`](../../Assets/Src/Enemy/EnemyData.cs) の `danmaku*` フィールド |
 | 進行ランプ | [`GameTuning`](../../Assets/Src/Utils/GameTuning.cs) の `danmakuSpeedRampPerBoss` / `danmakuDensityRampPerBoss` |
+| 弾幕の単体チェック | デバッグ室 [`DebugRoomController`](../../Assets/Src/System/DebugRoomController.cs)（弾種・パターン検証リスト） |
 
 ## 難易度パラメータ（[弾数] / [弾速]）
 
@@ -36,6 +40,44 @@
 | `Ring` | 全方位リング。発射ごとに `danmakuRingAngleStepDeg` ずつ回転 |
 | `AimedFan` | 自機を狙う扇状の連射(`fanSpreadDeg` 幅)。ナイフ投げ的 |
 | `Mixed` | Ring と AimedFan を4発ごとに交互に切替(複合) |
+
+### 狙い方（DanmakuAim）※フェーズ指定時に有効
+
+弾の「当たり方」を作り分ける。偶数弾（自機に隙間）/奇数弾（自機に弾）の作り分けに使う。
+
+| 種別 | 挙動 |
+|---|---|
+| `Aimed` | 自機狙い。Ring は1本が自機方向（奇数弾的）、Fan は自機方向を中心に撃つ |
+| `AntiAim` | 自機外し。自機方向に「隙間」が来るよう半ステップずらす（偶数弾的） |
+| `FixedDown` | 固定（真下基準）。自機位置に依存しない |
+
+### 弾の大きさ・形状（BulletSize / BulletShape）
+
+色（`BulletKind`）とは独立に、1発ごとに大きさと形状を指定できる。当たり半径は `BulletSize` が決める。
+
+| 大きさ | 当たり半径 | 用途 |
+|---|---|---|
+| `Small` | 0.075 | 細かくバラ撒く小弾 |
+| `Medium` | 0.12 | 標準（従来互換） |
+| `Large` | 0.22 | 遅くて避けづらい大玉 |
+
+| 形状 | 見た目 |
+|---|---|
+| `Round` | 丸弾（半径に比例したスケール） |
+| `Kunai` | 進行方向へ細長く伸ばし、速度方向に回転させた鋭い弾 |
+
+### 時間変化フェーズ（DanmakuPhase）
+
+`EnemyData.danmakuPhases` に1つ以上の `DanmakuPhase` を積むと、上の**単一パラメータより優先**され、
+各フェーズを `duration` 秒ずつ順に撃って**ループ**する。1フェーズは
+`shape`（Ring/AimedFan）・`aim`・`wayCount`・`fanSpreadDeg`・`rotationStepDeg`・`fireInterval`・
+`bulletSpeed`・`kind`・`size`・`bulletShape`・`healEveryNShots`・`duration` を持つ。
+
+例（「自機狙い→自機近くで破裂して自機外し全方位偶数弾」）:
+1. `AimedFan`・`Aimed`・細い扇・`Kunai`・`Fast` を 1.2 秒（狙い撃ち）
+2. `Ring`・`AntiAim`・16way(偶数)・`Large`・`Round` を 0.6 秒（破裂・自機外し全方位）
+
+> 進行ランプの弾速倍率はフェーズ弾速にも乗る。弾数ランプはパリティ（偶奇）を壊すためフェーズには掛けない。
 
 ### 進行ランプ（連戦が進むほど強く）
 

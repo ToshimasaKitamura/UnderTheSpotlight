@@ -43,6 +43,7 @@ public class DanmakuManager : MonoBehaviour
             {
                 var t = targets[j];
                 if (t == null) continue;
+                if (t.IsDebugInvincible) continue; // 弾幕デバッグ中は弾をすり抜けさせ、観察を妨げない
                 Vector3 diff = b.transform.position - t.transform.position;
                 float r = b.radius + t.radius;
                 if (diff.sqrMagnitude < r * r)
@@ -84,14 +85,32 @@ public class DanmakuManager : MonoBehaviour
 
     private bool warnedNoBulletPrefab;
 
-    /// <summary>通常弾(白黒)を生成する。弾種を指定したい場合は overload を使う。</summary>
-    public GameObject SpawnBullet(Vector3 pos, Vector3 vel)
+    // 弾サイズごとの当たり半径(ワールド単位)。丸弾の見た目スケールもこれに比例させる。
+    private const float BaseRadius = 0.12f;          // 従来の既定半径(= Medium)
+    private static float RadiusOf(BulletSize s)
     {
-        return SpawnBullet(pos, vel, BulletKind.Normal);
+        switch (s)
+        {
+            case BulletSize.Small: return 0.075f;
+            case BulletSize.Large: return 0.22f;
+            default: return BaseRadius;              // Medium
+        }
     }
 
-    /// <summary>弾種を指定して弾を生成する。</summary>
+    /// <summary>通常弾(白黒・中弾・丸)を生成する。細かく指定したい場合は overload を使う。</summary>
+    public GameObject SpawnBullet(Vector3 pos, Vector3 vel)
+    {
+        return SpawnBullet(pos, vel, BulletKind.Normal, BulletSize.Medium, BulletShape.Round);
+    }
+
+    /// <summary>弾種を指定して弾を生成する(中弾・丸)。</summary>
     public GameObject SpawnBullet(Vector3 pos, Vector3 vel, BulletKind kind)
+    {
+        return SpawnBullet(pos, vel, kind, BulletSize.Medium, BulletShape.Round);
+    }
+
+    /// <summary>弾種・大きさ・形状を指定して弾を生成する。</summary>
+    public GameObject SpawnBullet(Vector3 pos, Vector3 vel, BulletKind kind, BulletSize size, BulletShape shape)
     {
         if (bulletPrefab == null)
         {
@@ -108,21 +127,38 @@ public class DanmakuManager : MonoBehaviour
         if (b == null) b = go.AddComponent<Bullet>();
         b.velocity = vel;
         b.kind = kind;
-        ApplyKindVisual(go, kind);
+        b.radius = RadiusOf(size);
+        ApplyVisual(go, kind, size, shape, vel);
         bullets.Add(b);
         return go;
     }
 
-    /// <summary>弾種に応じて弾の見た目(色)を設定する。</summary>
-    private void ApplyKindVisual(GameObject bulletGo, BulletKind kind)
+    /// <summary>弾種(色)・大きさ・形状(向き)に応じて弾の見た目を設定する。</summary>
+    private void ApplyVisual(GameObject bulletGo, BulletKind kind, BulletSize size, BulletShape shape, Vector3 vel)
     {
         var sr = bulletGo.GetComponentInChildren<SpriteRenderer>();
         if (sr == null) return;
+
         switch (kind)
         {
             case BulletKind.Fast: sr.color = FastColor; break;
             case BulletKind.Heal: sr.color = HealColor; break;
             default: sr.color = NormalColor; break;
+        }
+
+        // 見た目スケール: 丸は半径に比例、クナイは進行方向へ細長く伸ばして回転。
+        float unit = RadiusOf(size) / BaseRadius; // Medium=1
+        var t = sr.transform;
+        if (shape == BulletShape.Kunai && vel.sqrMagnitude > 0.0001f)
+        {
+            t.localScale = new Vector3(unit * 2.0f, unit * 0.55f, 1f); // 長辺=進行方向
+            float ang = Mathf.Atan2(vel.y, vel.x) * Mathf.Rad2Deg;      // スプライト長辺(X)を速度へ
+            t.localRotation = Quaternion.Euler(0f, 0f, ang);
+        }
+        else
+        {
+            t.localScale = new Vector3(unit, unit, 1f);
+            t.localRotation = Quaternion.identity;
         }
     }
 
