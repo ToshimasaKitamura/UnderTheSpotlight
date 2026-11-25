@@ -47,6 +47,11 @@ public abstract class GroupRelayMicroGame : IMicroGame
     private Image[] zoneBg;
     private Text[] resultLabels;
     private RectTransform highlightRt;
+    private Text promptLabel;
+    // 操作説明の配置(バー中心からの高さ。HIT/MISS ラベルの上)と大きさ
+    private const float PromptOffsetY = 92f;
+    private const float PromptH = 64f;
+    private const int PromptFontSize = 44;
     private RectTransform lightRt;
     private Image lightImg;
 
@@ -93,6 +98,7 @@ public abstract class GroupRelayMicroGame : IMicroGame
         root.transform.SetParent(c.uiRoot, false);
         AcUi.Stretch(root.GetComponent<RectTransform>());
 
+        // IMGUI ヘルパーはタイマー表示に使う(操作説明は下の uGUI の大きい文字で出す)
         var guiHelper = root.AddComponent<MicroGameIMGUIHelper>();
         guiHelper.Initialize(() => PromptText);
         guiHelper.SetTimer(() => PlayerTime, () => PerPlayerLimit);
@@ -137,6 +143,13 @@ public abstract class GroupRelayMicroGame : IMicroGame
             var div = AcUi.Image(bg.transform, $"Div{i}", new Color(0f, 0f, 0f, 0.7f));
             PlaceCenter(div.rectTransform, x, 0f, 3f, BarH - Pad);
         }
+
+        // 操作説明(バーの上・大きい文字)。手番プレイヤーの番号と色で「P1  SPACE を れんだ！」のように出す。
+        // 以前の IMGUI の小さいドット文字は読みにくかったため、読みやすい本文フォントで大きく、黒い下地の上に出す。
+        var promptBg = AcUi.Image(bg.transform, "PromptBg", new Color(0f, 0f, 0f, 0.6f));
+        PlaceCenter(promptBg.rectTransform, 0f, BarH / 2f + PromptOffsetY, BarW * 0.86f, PromptH);
+        promptLabel = AcUi.Label(promptBg.transform, "Prompt", PromptFontSize, Color.white, TextAnchor.MiddleCenter, true, true);
+        AcUi.Stretch(promptLabel.rectTransform);
 
         // 手番領域のハイライト
         var hl = AcUi.Image(bg.transform, "Highlight", new Color(1f, 1f, 1f, 0f));
@@ -278,12 +291,21 @@ public abstract class GroupRelayMicroGame : IMicroGame
 
     private void MoveHighlightTo(int i)
     {
+        UpdatePrompt(i);
         if (highlightRt == null) return;
         float leftX = -InnerW / 2f + i * ZoneW;
         PlaceLeft(highlightRt, leftX - 2f, ZoneW + 1f, BarH - Pad);
         Color col = PlayerColor(i);
         var img = highlightRt.GetComponent<Image>();
         if (img != null) img.color = new Color(col.r, col.g, col.b, 0.4f);
+    }
+
+    /// <summary>操作説明を手番プレイヤーの番号・色で更新する。</summary>
+    private void UpdatePrompt(int i)
+    {
+        if (promptLabel == null) return;
+        promptLabel.text = $"P{i + 1}  {PromptText}";
+        promptLabel.color = PlayerColor(i);
     }
 
     private float ZoneCenterX(int i) => -InnerW / 2f + (i + 0.5f) * ZoneW;

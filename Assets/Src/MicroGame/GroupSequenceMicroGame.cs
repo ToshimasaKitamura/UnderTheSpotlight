@@ -11,7 +11,7 @@ using UnityEngine.UI;
 public class GroupSequenceMicroGame : GroupRelayMicroGame
 {
     public override string DisplayName => "じゅんばんに！";
-    protected override string PromptText => "やじるしを じゅんばんに！";
+    protected override string PromptText => "やじるしキー(WASD)を じゅんばんに！";
 
     private const int MinLen = 2;
     private const int MaxLen = 6;
