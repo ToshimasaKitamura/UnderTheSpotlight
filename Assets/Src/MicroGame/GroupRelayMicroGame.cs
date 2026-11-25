@@ -139,6 +139,8 @@ public abstract class GroupRelayMicroGame : IMicroGame
         // 手番領域のハイライト
         var hl = AcUi.Image(bg.transform, "Highlight", new Color(1f, 1f, 1f, 0f));
         highlightRt = hl.rectTransform;
+        // 中身(ねらい枠・矢印など)より手前に描くと、手番の領域だけ色が被って見えにくくなるため、最背面に置く
+        highlightRt.SetAsFirstSibling();
         MoveHighlightTo(Current);
 
         // 交代の光(初期は非表示)
