@@ -72,11 +72,13 @@ public class PartSelectPhase : MonoBehaviour, IBattlePhase
 
     private void ApplyTuning()
     {
+        if (tuning == null) tuning = GameTuning.LoadDefault();
         // 人数は tuning 未割り当てでも必ず反映する(選択パーティがあれば参加人数、無ければ tuning/既定)
         playerCount = BattleParty.Count(tuning);
         if (tuning == null) return;
-        // CardSelect と同じ枠の制限時間を流用する(部位選択の長さは CSV 側で別管理にしてもよい)
-        if (tuning.selectTimeLimit > 0f) selectTimeLimit = tuning.selectTimeLimit;
+        // 部位選択の制限時間はカード選択(selectTimeLimit)とは別に CSV の partSelectTimeLimit で管理する
+        float partLimit = tuning.GetFloat("partSelectTimeLimit", selectTimeLimit);
+        if (partLimit > 0f) selectTimeLimit = partLimit;
         var cols = tuning.ResolvePlayerColors();
         if (cols != null && cols.Length > 0) playerColors = cols;
     }

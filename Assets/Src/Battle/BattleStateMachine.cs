@@ -49,13 +49,8 @@ public class BattleStateMachine : MonoBehaviour
     {
 
         // フォント: GameTuning.displayFont / bodyFont を全 UI に反映(任意)
-        if (fontTuning == null)
-        {
-            // 自動探索: シーン内の GameTuning ScriptableObject を Inspector から拾えなければ、
-            // CardSelectPhase 等が持ってる tuning を試す
-            var anyTuning = Resources.FindObjectsOfTypeAll<GameTuning>();
-            if (anyTuning != null && anyTuning.Length > 0) fontTuning = anyTuning[0];
-        }
+        // 未割り当てなら正典(Resources/Data/GameTuning.asset)を使う
+        if (fontTuning == null) fontTuning = GameTuning.LoadDefault();
         if (fontTuning != null) GameFont.RegisterFromTuning(fontTuning);
 
         // Inspector にセットされていなければ子オブジェクトから自動取得する

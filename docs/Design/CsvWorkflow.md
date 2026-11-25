@@ -118,17 +118,22 @@ moveDeceleratePerFrame,0.2,"同時に【ワザ中のX減速度は毎F○】で�
 
 ## 5. ランタイム参照(GameTuning)
 
-各 MonoBehaviour の Inspector に `Tuning` フィールドがあり、`Assets/Data/GameTuning.asset` を参照済。
+正典アセットは **`Assets/Resources/Data/GameTuning.asset`**(CSV 取込の出力先)。
+各 MonoBehaviour の Inspector に `Tuning` フィールドがあるが、**未割り当て(null)なら `GameTuning.LoadDefault()` で正典アセットを自動で読み込む**。
+シーンでの割り当ては不要。アセットが無い場合はエラーを出し、各クラスのコード既定値で動く。
 
 | クラス | tuning から反映される値 |
 |---|---|
 | `SharedHpController` | `maxHp` |
 | `PartyDeckController` | `playerCount`, `drawCount` |
 | `CardSelectPhase` | `playerCount`, `selectTimeLimit`, `randomizeTurnOrder`, `playerColors` |
+| `PartSelectPhase` | `playerCount`, `partSelectTimeLimit`(customParam), `playerColors` |
 | `ActionCommandPhase` | `playerCount`, `roundsPerActionCommand`, `interRoundDelay`, `resultFlashDuration`, `baseTimeLimit`, `timeLimitPerRound`, `speedRampPerRound`, `buttonCountBase`, `difficultyToSpeed`, `difficultyToInterfere`, `minTimeLimit`, `playerColors` |
-| `DodgePhase` | `playerTurnDuration`, `playerColors`, `playerCallouts`, `maxHp`(参考) |
+| `DodgePhase` | `playerTurnDuration`, `playerColors`, `playerCallouts`, `maxHp`, `danmakuSpeedRampPerBoss`, `danmakuDensityRampPerBoss`(DodgeEnemyManager 経由) |
+| `BombController` | `playerCount`, `bombsPerPlayer`(customParam) |
+| `BattleStateMachine` | `displayFont`, `bodyFont` |
 
-`tuning` 未設定なら各クラスのローカル既定値(Inspector で個別調整) が使われる。
+> 2026-11-25 まではシーン側の `Tuning` がすべて未割り当てで、CSV の値はバトルに反映されていなかった(経緯は [開発ナレッジ](../開発ナレッジ.md))。
 
 ---
 

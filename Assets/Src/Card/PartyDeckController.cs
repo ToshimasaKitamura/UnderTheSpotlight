@@ -31,6 +31,7 @@ public class PartyDeckController : MonoBehaviour
     void Awake()
     {
         Debug.Log("[PartyDeckController] Awake 開始");
+        if (tuning == null) tuning = GameTuning.LoadDefault();
         if (tuning != null)
         {
             playerCount = tuning.playerCount;

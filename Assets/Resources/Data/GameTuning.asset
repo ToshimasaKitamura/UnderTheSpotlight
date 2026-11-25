@@ -22,6 +22,9 @@ MonoBehaviour:
   - key: bombsPerPlayer
     value: 2
     description: "\u5F3E\u5E55\u4E2D\u306B\u64CD\u4F5C\u30D7\u30EC\u30A4\u30E4\u30FC\u4EE5\u5916\u304C\u4F7F\u3048\u308B\u63F4\u8B77\u30DC\u30E0\u3092\u5404\u30D7\u30EC\u30A4\u30E4\u30FC\u3010\u25CB\u500B\u3011\u6301\u3063\u3066\u6226\u95D8\u958B\u59CB\u3059\u308B"
+  - key: partSelectTimeLimit
+    value: 12
+    description: "\u90E8\u4F4D\u9078\u629E\u306F1\u4EBA\u3042\u305F\u308A\u3010\u25CB\u79D2\u3011\u4EE5\u5185\u306B\u884C\u3046"
   playerCount: 4
   maxHp: 5
   playerColors:
@@ -38,13 +41,13 @@ MonoBehaviour:
   selectTimeLimit: 15
   randomizeTurnOrder: 0
   roundsPerActionCommand: 3
-  baseTimeLimit: 4.5
-  timeLimitPerRound: -0.7
-  speedRampPerRound: 0.18
-  buttonCountBase: 2
-  difficultyToSpeed: 0.03
-  difficultyToInterfere: 0.012
-  minTimeLimit: 1.6
+  baseTimeLimit: 3.5
+  timeLimitPerRound: -0.5
+  speedRampPerRound: 0.25
+  buttonCountBase: 3
+  difficultyToSpeed: 0.05
+  difficultyToInterfere: 0.02
+  minTimeLimit: 1.2
   interRoundDelay: 0.7
   resultFlashDuration: 0.9
   playerTurnDuration: 4

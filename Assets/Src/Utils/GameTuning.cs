@@ -6,7 +6,8 @@ using UnityEngine;
 /// ゲームバランス数値を1か所に集約した ScriptableObject。
 /// Excel→CSV→Editor 取込で更新できる「数値の唯一の真実」。
 /// 各 Phase は自身に [SerializeField] GameTuning tuning を持ち、Awake で ApplyTuning して
-/// ローカル既定値を上書きする(tuning が null ならローカル値=Inspector 直接設定 を使う)。
+/// ローカル既定値を上書きする。Inspector で未割り当て(null)なら <see cref="LoadDefault"/> で
+/// Resources/Data/GameTuning.asset(CSV 取込の出力先)を読み込んで使う。
 ///
 /// customParams: プランナーが CSV で任意の key/value/description 行を追加できる。
 /// コード側は GetFloat/GetInt/GetString/GetBool で参照する。
@@ -16,6 +17,29 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "GameTuning", menuName = "UnderTheSpotlight/GameTuning")]
 public class GameTuning : ScriptableObject
 {
+    /// <summary>CSV 取込(Assets/Editor/CsvImporter.cs)が出力する正典アセットの Resources パス。</summary>
+    public const string ResourcesPath = "Data/GameTuning";
+
+    private static GameTuning cachedDefault;
+    private static bool reportedMissing;
+
+    /// <summary>
+    /// 正典の GameTuning(Assets/Resources/Data/GameTuning.asset)を返す。
+    /// 各 Phase の tuning が Inspector で未割り当てのときに使う。見つからない場合は原因が分かるエラーを
+    /// 1回だけ出して null を返す(呼び出し側はコードの既定値で動く)。
+    /// </summary>
+    public static GameTuning LoadDefault()
+    {
+        if (cachedDefault != null) return cachedDefault;
+        cachedDefault = Resources.Load<GameTuning>(ResourcesPath);
+        if (cachedDefault == null && !reportedMissing)
+        {
+            reportedMissing = true;
+            Debug.LogError($"[GameTuning] Resources/{ResourcesPath}.asset が見つかりません。Assets/Data/csv/game_tuning.csv を取り込んで作成してください。数値はコードの既定値で動きます。");
+        }
+        return cachedDefault;
+    }
+
     [System.Serializable]
     public class CustomParam
     {
@@ -99,13 +123,13 @@ public class GameTuning : ScriptableObject
 
     [Header("ActionCommand")]
     public int roundsPerActionCommand = 3;
-    public float baseTimeLimit = 4.5f;
-    public float timeLimitPerRound = -0.7f;
-    public float speedRampPerRound = 0.18f;
-    public int buttonCountBase = 2;
-    public float difficultyToSpeed = 0.03f;
-    public float difficultyToInterfere = 0.012f;
-    public float minTimeLimit = 1.6f;
+    public float baseTimeLimit = 3.5f;
+    public float timeLimitPerRound = -0.5f;
+    public float speedRampPerRound = 0.25f;
+    public int buttonCountBase = 3;
+    public float difficultyToSpeed = 0.05f;
+    public float difficultyToInterfere = 0.02f;
+    public float minTimeLimit = 1.2f;
     public float interRoundDelay = 0.7f;
     public float resultFlashDuration = 0.9f;
 
