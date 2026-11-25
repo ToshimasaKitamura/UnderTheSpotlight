@@ -266,7 +266,7 @@ public class BossDanmakuPattern : MonoBehaviour
     {
         Vector3 origin = transform.position;
         Vector3 aim = Vector3.down;
-        var target = FindObjectOfType<PlayerOnFieldHittable>();
+        var target = PlayerOnFieldHittable.First;
         if (target != null)
         {
             Vector3 d = target.transform.position - origin;
@@ -288,7 +288,7 @@ public class BossDanmakuPattern : MonoBehaviour
     /// <summary>自機方向の角度(度)。自機不明時は真下(-90)。</summary>
     private float AngleToPlayerDeg(Vector3 origin)
     {
-        var target = FindObjectOfType<PlayerOnFieldHittable>();
+        var target = PlayerOnFieldHittable.First;
         if (target != null)
         {
             Vector3 d = target.transform.position - origin;

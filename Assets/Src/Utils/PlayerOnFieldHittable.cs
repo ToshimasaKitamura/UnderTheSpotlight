@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -17,6 +18,17 @@ public class PlayerOnFieldHittable : MonoBehaviour
     public event Action<PlayerOnFieldHittable> Hit;
 
     private float invulnerableUntil;
+
+    // 有効な被弾判定対象の一覧。DanmakuManager(毎フレーム)や BossDanmakuPattern(毎発射)が
+    // シーン全体を FindObjectsOfType で探さずに済むよう、ここで管理する。
+    private static readonly List<PlayerOnFieldHittable> active = new List<PlayerOnFieldHittable>();
+    /// <summary>現在有効な被弾判定対象(自機)。</summary>
+    public static IReadOnlyList<PlayerOnFieldHittable> Active => active;
+    /// <summary>最初の有効な自機(交代制なので通常は1体)。いなければ null。</summary>
+    public static PlayerOnFieldHittable First => active.Count > 0 ? active[0] : null;
+
+    private void OnEnable() { if (!active.Contains(this)) active.Add(this); }
+    private void OnDisable() { active.Remove(this); }
 
     public bool IsInvulnerable => Time.time < invulnerableUntil;
 

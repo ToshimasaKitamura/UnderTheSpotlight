@@ -24,10 +24,19 @@ public class EnemyHpGaugeBinder : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
+    // 戦闘外では対象が無いので、探すのは 0.5 秒に1回にする(以前は毎フレーム2回シーン全体を検索していた)。
+    // BattleFrameUI はバトル開始後に実行時生成されるため、見つかるまでは探し続ける。
+    private const float SearchInterval = 0.5f;
+    private float nextSearchTime;
+
     private void Update()
     {
-        if (state == null) state = FindObjectOfType<EnemyRuntimeState>();
-        if (frameUI == null) frameUI = FindObjectOfType<BattleFrameUI>();
+        if ((state == null || frameUI == null) && Time.unscaledTime >= nextSearchTime)
+        {
+            nextSearchTime = Time.unscaledTime + SearchInterval;
+            if (state == null) state = FindObjectOfType<EnemyRuntimeState>();
+            if (frameUI == null) frameUI = FindObjectOfType<BattleFrameUI>();
+        }
         if (state == null || frameUI == null)
         {
             lastData = null; // 戦闘外 or 未初期化 → 次回入場で初回扱いに戻す

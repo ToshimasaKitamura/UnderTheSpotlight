@@ -9,6 +9,8 @@ public class DanmakuManager : MonoBehaviour
 
     [Tooltip("弾を描画する範囲(ワールド座標 AABB)。境界外に出た弾は破棄される。")]
     public Bounds fieldBounds;
+
+    private readonly List<PlayerOnFieldHittable> targetsBuf = new List<PlayerOnFieldHittable>();
     [Tooltip("true で fieldBounds による弾のクリッピングを有効化。")]
     public bool useFieldBounds = false;
 
@@ -22,7 +24,10 @@ public class DanmakuManager : MonoBehaviour
 
     void Update()
     {
-        var targets = FindObjectsOfType<PlayerOnFieldHittable>();
+        // 被弾で自機が撤去されると一覧が変わるため、このフレームの分を写してから回す(配列は使い回す)
+        targetsBuf.Clear();
+        targetsBuf.AddRange(PlayerOnFieldHittable.Active);
+        var targets = targetsBuf;
         // NotifyHit は購読側(DodgePhase)が ClearAllBullets を同期実行する可能性があるため、
         // 反復はスナップショットで行い、本体 list へは Remove(b) で安全に変更する。
         var snapshot = bullets.ToArray();
@@ -39,7 +44,7 @@ public class DanmakuManager : MonoBehaviour
             }
 
             // 自機との衝突判定
-            for (int j = 0; j < targets.Length; j++)
+            for (int j = 0; j < targets.Count; j++)
             {
                 var t = targets[j];
                 if (t == null) continue;
