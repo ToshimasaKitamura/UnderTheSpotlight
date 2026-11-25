@@ -91,6 +91,14 @@ public class BattleResultPhase : MonoBehaviour, IBattlePhase
         routine = StartCoroutine(RunResultSequence());
     }
 
+    // 撃破演出の途中でシーンごと破棄された場合(Exit が呼ばれない)も、時間の設定を必ず通常に戻す。
+    // Time.timeScale / fixedDeltaTime はシーンを跨いで残るグローバル値のため。
+    private void OnDestroy()
+    {
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
+    }
+
     public void Exit()
     {
         enabled = false;
