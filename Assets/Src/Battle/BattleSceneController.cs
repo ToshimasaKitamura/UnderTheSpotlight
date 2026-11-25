@@ -50,10 +50,11 @@ public class BattleSceneController : MonoBehaviour
                 enemyState.ResetAll();
             }
 
-            // RunProgress に記録(ステージがある場合のみ。上書き時は連戦ランプを乗せない=bossIndex 0)
+            // RunProgress に記録(ステージがある場合のみ)。実際に戦うボスの番号から始める。
+            // 上書き(デバッグの弾種検証)時は連戦ランプを乗せない=0 番から。
             if (runProgress != null && stage != null)
             {
-                runProgress.BeginStage(stage);
+                runProgress.BeginStage(stage, DebugLaunch.OverrideEnemy != null ? 0 : bossIdx);
             }
 
             string label = chosen != null ? chosen.displayName : "(none)";
