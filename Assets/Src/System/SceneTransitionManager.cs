@@ -35,6 +35,8 @@ public class SceneTransitionManager : MonoBehaviour
     private Image fadeImage;
     private RectTransform slidePanel;
     private bool isTransitioning = false;
+    /// <summary>シーン遷移(フェード等)の最中か。最中に別の遷移を始めない判定に使う。</summary>
+    public bool IsTransitioning => isTransitioning;
 
     void Awake()
     {
