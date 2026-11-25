@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 public class GroupMashMicroGame : GroupRelayMicroGame
 {
     public override string DisplayName => "れんだ！";
-    protected override string PromptText => "SPACE!";
+    protected override string PromptText => "SPACE を れんだ！";
     // 連打は塗りで成否が見て分かるため、HIT/MISS ラベルは出さない(従来どおり)
     protected override bool ShowResultLabels => false;
 
