@@ -50,6 +50,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
     private readonly List<ulong> _ordered = new List<ulong>(); // サーバ側の参加順(host が先頭)
     private bool _hooked;
     private bool _handlersRegistered;
+    private bool _leaving; // 自分から退出中(この間の自分の切断はエラー扱いしない)
 
     private Vector2 _localNorm;
     private bool _hasLocalNorm;
@@ -61,6 +62,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
 
     public async void HostRoom(int maxPlayers)
     {
+        if (!CanStartNewSession("部屋を建てる")) return;
         try
         {
             BeginConnecting(NetLobbyRole.Host);
@@ -89,6 +91,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
 
     public async void JoinRoom(string code)
     {
+        if (!CanStartNewSession("部屋に入る")) return;
         try
         {
             if (string.IsNullOrWhiteSpace(code))
@@ -116,7 +119,10 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
         try
         {
             if (_nm != null && (_nm.IsListening || _nm.IsClient || _nm.IsServer))
+            {
+                _leaving = true; // Shutdown は遅延処理。直後に来る自分の切断通知をエラーにしない
                 _nm.Shutdown();
+            }
         }
         catch (Exception e) { Debug.LogWarning("[NetcodeRelayLobby] Shutdown 中に例外: " + e.Message); }
 
@@ -278,6 +284,7 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
         }
         else if (clientId == _nm.LocalClientId)
         {
+            if (_leaving) return; // 自分から退出した結果の切断
             LastError = "サーバから切断されました。";
             Status = NetLobbyStatus.Error;
             Raise();
@@ -329,8 +336,28 @@ public sealed class NetcodeRelayLobby : MonoBehaviour, INetworkLobby
 
     // ---- 状態遷移ヘルパ ----
 
+    /// <summary>
+    /// 新しく部屋を建てる/入る操作を始めてよいか。接続中・参加中や、前の接続の終了処理中は始めない。
+    /// (始めると Relay の割当や JoinCode が上書きされ、今の接続が壊れるため)
+    /// </summary>
+    private bool CanStartNewSession(string what)
+    {
+        string reason = null;
+        if (Status == NetLobbyStatus.Connecting) reason = "接続処理中です";
+        else if (Status == NetLobbyStatus.Active) reason = "すでに部屋に参加しています。先に「退出」してください";
+        else if (_nm != null && _nm.ShutdownInProgress) reason = "前の接続の終了処理中です。少し待ってからやり直してください";
+        else if (_nm != null && _nm.IsListening) reason = "前の接続がまだ残っています。「退出」してからやり直してください";
+        if (reason == null) return true;
+
+        LastError = $"{what}ことができません: {reason}。";
+        Debug.LogError($"[NetcodeRelayLobby] {LastError} (Status={Status}, Role={Role})");
+        Raise();
+        return false;
+    }
+
     private void BeginConnecting(NetLobbyRole role)
     {
+        _leaving = false;
         Role = role;
         Status = NetLobbyStatus.Connecting;
         LastError = string.Empty;
