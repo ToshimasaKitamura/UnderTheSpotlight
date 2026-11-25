@@ -26,6 +26,8 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
 
     private bool isActive = false;
     private Coroutine currentRoutine;
+    // 中央フィールド。退場時に非アクティブになり GameObject.Find で見つからなくなるため、最初に見つけた/作ったものを使い回す
+    private GameObject cachedField;
 
     public bool BlocksDebugAdvance => true;
 
@@ -71,9 +73,9 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
 
         // 初期化と参照解決
         var enemiesRoot = GameObject.Find("Enemies")?.transform;
-        var centralField = GameObject.Find("Field");
+        var centralField = cachedField != null ? cachedField : GameObject.Find("Field");
 
-        // Fieldが存在しない場合は自動生成
+        // Fieldが存在しない場合は自動生成(初回のみ。2回目以降は cachedField を使い回す)
         if (centralField == null)
         {
             Debug.Log("[DodgePhase] Field not found, creating default field");
@@ -101,6 +103,8 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
             sr.sortingOrder = -100;
             sr.color = new Color(0.2f, 0.2f, 0.3f, 1f);
         }
+
+        cachedField = centralField;
 
         // プレイヤーの並びは CardSelectPhase が Inspector で持つ P1..P4 順の配列を使う
         // (手番インデックスとキャラを一致させるため。順不同なタグ検索フォールバックは持たない)。

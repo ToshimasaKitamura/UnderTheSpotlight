@@ -78,6 +78,8 @@
 2. `Ring`・`AntiAim`・16way(偶数)・`Large`・`Round` を 0.6 秒（破裂・自機外し全方位）
 
 > 進行ランプの弾速倍率はフェーズ弾速にも乗る。弾数ランプはパリティ（偶奇）を壊すためフェーズには掛けない。
+> 部位破壊の効果(WeakenNextAttack / ReducePatternSpeed / ReducePatternDensity)はフェーズにも掛かる。弾数を減らす効果は偶奇を保ったまま減らす(例: 16way→10way、17way→11way)。
+> `AimedFan` の `AntiAim` は、奇数 way のときだけ半ステップずらす(偶数 way の扇は中心がもともと隙間)。
 
 ### 進行ランプ（連戦が進むほど強く）
 
