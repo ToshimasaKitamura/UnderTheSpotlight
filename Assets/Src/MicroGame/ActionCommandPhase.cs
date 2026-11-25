@@ -93,6 +93,9 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     // ダメージ光の星。白で1回だけ作り、SpriteRenderer.color でプレイヤー色に染める(命中のたびに作らない)
     private Texture2D hitStarTex;
     private Sprite hitStarSprite;
+    // 揺れ演出で白くしたボスの SpriteRenderer と元の色(揺れの途中で Exit したときに戻す)
+    private SpriteRenderer shakeSr;
+    private Color shakeBaseCol;
 
     public class HitEffectData
     {
@@ -177,6 +180,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         hitLightGos.Clear();
         // 揺れ途中で止まった敵をホーム位置へ戻す
         if (cachedEnemyTf != null) cachedEnemyTf.position = cachedEnemyHome;
+        if (shakeSr != null) { shakeSr.color = shakeBaseCol; shakeSr = null; }
         hitEffects.Clear();
         bannerText = "";
         UnityEngine.Debug.Log("[ActionCommandPhase] 終了");
@@ -204,7 +208,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         int chosenIndex;
         if (debugForceGroupGame >= 0)
         {
-            chosenIndex = registry.Count > 0 ? (debugForceGroupGame % registry.Count) : 0;
+            // 範囲外は黙って折り返さない(4 を指定して れんだ が出ると原因が分からないため)。Create がエラーを出す
+            chosenIndex = debugForceGroupGame;
         }
         else
         {
@@ -388,9 +393,17 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     private void HandlePlayerAttack(int playerIndex)
     {
         var selections = cardSelectPhase != null ? cardSelectPhase.Selections : null;
-        if (selections == null || playerIndex < 0 || playerIndex >= selections.Count) return;
+        if (selections == null || playerIndex < 0 || playerIndex >= selections.Count)
+        {
+            Debug.LogError($"[ActionCommandPhase] P{playerIndex + 1} が命中しましたが、カード選択の結果がありません(selections={(selections == null ? "null" : selections.Count.ToString())} 件)。攻撃を適用できません。CardSelectPhase を経由して起動しているか確認してください。");
+            return;
+        }
         var card = selections[playerIndex];
-        if (card == null || card.Data == null) return;
+        if (card == null || card.Data == null)
+        {
+            Debug.LogError($"[ActionCommandPhase] P{playerIndex + 1} の選択カードが null です(カードデータ未設定)。攻撃を適用できません。");
+            return;
+        }
 
         if (perPlayerSuccess != null && playerIndex < perPlayerSuccess.Length)
             perPlayerSuccess[playerIndex]++;
@@ -459,12 +472,20 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
                 hitLabel += " BUFF";
         }
 
-        // ヒットエフェクトを追加
-        float slotW = 320f;
-        float gap = 30f;
-        float total = playerCount * slotW + (playerCount - 1) * gap;
-        float startX = -total * 0.5f + slotW * 0.5f;
-        float x = startX + playerIndex * (slotW + gap);
+        // ヒットエフェクトを追加。位置は命中した領域(ミニゲームが記録した攻撃の始点)に合わせる。
+        // (以前は旧 GroupButton の配置(320px 間隔)で計算しており、今の領域とずれていた)
+        float x;
+        if (currentCtx != null && currentCtx.HasLastAttackScreenPos)
+        {
+            x = currentCtx.LastAttackScreenPos.x - Screen.width * 0.5f; // IMGUI の描画は画面中央からのずれで指定する
+        }
+        else
+        {
+            float slotW = 320f;
+            float gap = 30f;
+            float total = playerCount * slotW + (playerCount - 1) * gap;
+            x = -total * 0.5f + slotW * 0.5f + playerIndex * (slotW + gap);
+        }
 
         Color col = (playerColors != null && playerIndex < playerColors.Length)
             ? playerColors[playerIndex] : Color.white;
@@ -557,6 +578,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
         var sr = enemy.GetComponentInChildren<SpriteRenderer>();
         Color baseCol = sr != null ? sr.color : Color.white;
+        shakeSr = sr; shakeBaseCol = baseCol; // 途中で Exit しても色を戻せるよう覚えておく
         if (sr != null) sr.color = Color.Lerp(baseCol, Color.white, 0.65f);
 
         float dur = 0.26f, t = 0f, amp = 0.2f;
@@ -571,6 +593,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         }
         if (enemy != null) enemy.position = cachedEnemyHome;
         if (sr != null) sr.color = baseCol;
+        shakeSr = null;
         enemyShakeCo = null;
     }
 
