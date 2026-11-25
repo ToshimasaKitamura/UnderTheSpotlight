@@ -25,6 +25,7 @@ public class SharedHpController : MonoBehaviour
 
     void Awake()
     {
+        if (tuning == null) tuning = GameTuning.LoadDefault();
         if (tuning != null) maxHp = tuning.maxHp;
         ResetHp();
     }

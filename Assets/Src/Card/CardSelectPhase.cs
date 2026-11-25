@@ -166,6 +166,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
 
     private void ApplyTuning()
     {
+        if (tuning == null) tuning = GameTuning.LoadDefault();
         // 人数は tuning 未割り当てでも必ず反映する(選択パーティがあれば参加人数、無ければ tuning/既定)
         playerCount = BattleParty.Count(tuning);
         if (tuning == null) return;

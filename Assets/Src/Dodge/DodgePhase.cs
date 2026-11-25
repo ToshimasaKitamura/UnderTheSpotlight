@@ -50,6 +50,7 @@ public class DodgePhase : MonoBehaviour, IBattlePhase
 
     private void ApplyTuning()
     {
+        if (tuning == null) tuning = GameTuning.LoadDefault();
         if (tuning == null) return;
         enemyManager.tuning = tuning;
         playerManager.playerTurnDuration = tuning.playerTurnDuration;

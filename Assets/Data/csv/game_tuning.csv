@@ -3,15 +3,16 @@ playerCount,4,プレイヤーは【○人】で戦う
 maxHp,5,全員で共有するHPは最大【○】
 drawCount,3,カード選択時、各プレイヤーは山札から【○枚】引く
 selectTimeLimit,15,カード選択は1人あたり【○秒】以内に行う
+partSelectTimeLimit,12,部位選択は1人あたり【○秒】以内に行う
 randomizeTurnOrder,false,ターン順をランダム化するかどうか【true=ランダム / false=固定】
 roundsPerActionCommand,3,アクションコマンドフェーズでは【○回】ミニゲームを行う
-baseTimeLimit,4.5,ミニゲーム1回の基本制限時間は【○秒】
-timeLimitPerRound,-0.7,"ラウンドが進むごとに制限時間が【○秒】ずつ増減する(負の値で短くなって難しくなる)"
-speedRampPerRound,0.18,ラウンドが進むごとに進行速度が【○】ずつ加算される
-buttonCountBase,2,ミニゲームで要求される入力数の基本値は【○】
-difficultyToSpeed,0.03,"カードの難度合計1点につき、速度が【○】加算される"
-difficultyToInterfere,0.012,"カードの難度合計1点につき、視覚妨害が【○】加算される"
-minTimeLimit,1.6,ミニゲームの制限時間は最低でも【○秒】は確保する
+baseTimeLimit,3.5,ミニゲーム1回の基本制限時間は【○秒】
+timeLimitPerRound,-0.5,"ラウンドが進むごとに制限時間が【○秒】ずつ増減する(負の値で短くなって難しくなる)"
+speedRampPerRound,0.25,ラウンドが進むごとに進行速度が【○】ずつ加算される
+buttonCountBase,3,ミニゲームで要求される入力数の基本値は【○】
+difficultyToSpeed,0.05,"カードの難度合計1点につき、速度が【○】加算される"
+difficultyToInterfere,0.02,"カードの難度合計1点につき、視覚妨害が【○】加算される"
+minTimeLimit,1.2,ミニゲームの制限時間は最低でも【○秒】は確保する
 interRoundDelay,0.7,ラウンドとラウンドの間に【○秒】の小休止を挟む
 resultFlashDuration,0.9,成功/失敗の表示は【○秒】間出す
 playerTurnDuration,4,"弾幕中、1人のプレイヤーが操作する時間は【○秒】"
