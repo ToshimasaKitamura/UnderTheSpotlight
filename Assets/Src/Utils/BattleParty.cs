@@ -26,13 +26,26 @@ public static class BattleParty
         return list.Count > 0 ? list.ToArray() : null;
     }
 
+    /// <summary>バトルで扱える最大人数(各フェーズの配列は4人分で作られている)。</summary>
+    public const int MaxPlayers = 4;
+
     /// <summary>
-    /// バトルの実効プレイヤー人数。参加者がいればその人数、いなければ tuning の既定値(無ければ4)。
+    /// バトルの実効プレイヤー人数(1〜4)。参加者がいればその人数、いなければ tuning の既定値(無ければ4)。
+    /// tuning(CSV)の値が範囲外ならエラーを出して 1〜4 に収める(5以上だと各フェーズの4人分の配列を超えて落ちるため)。
     /// </summary>
     public static int Count(GameTuning tuning)
     {
         var party = Resolve();
-        if (party != null) return party.Length;
-        return tuning != null ? tuning.playerCount : 4;
+        if (party != null) return ClampCount(party.Length, "選択パーティ");
+        return tuning != null ? ClampCount(tuning.playerCount, "GameTuning.playerCount(game_tuning.csv)") : MaxPlayers;
+    }
+
+    /// <summary>人数を 1〜4 に収める。範囲外なら、どの値が問題かをエラーで出す。</summary>
+    public static int ClampCount(int n, string source)
+    {
+        if (n >= 1 && n <= MaxPlayers) return n;
+        int clamped = n < 1 ? 1 : MaxPlayers;
+        UnityEngine.Debug.LogError($"[BattleParty] {source} の人数 {n} は範囲外です(1〜{MaxPlayers})。{clamped} 人として扱います。");
+        return clamped;
     }
 }

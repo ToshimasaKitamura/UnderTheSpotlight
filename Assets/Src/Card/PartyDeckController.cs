@@ -34,7 +34,7 @@ public class PartyDeckController : MonoBehaviour
         if (tuning == null) tuning = GameTuning.LoadDefault();
         if (tuning != null)
         {
-            playerCount = tuning.playerCount;
+            playerCount = BattleParty.ClampCount(tuning.playerCount, "GameTuning.playerCount(game_tuning.csv)");
             drawCount = tuning.drawCount;
             Debug.Log($"[PartyDeckController] tuning適用: playerCount={playerCount}, drawCount={drawCount}");
         }
