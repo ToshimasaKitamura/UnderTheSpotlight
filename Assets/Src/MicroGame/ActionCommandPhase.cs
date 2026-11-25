@@ -90,6 +90,9 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     // ダメージ演出の光(DamageLight)の実体。Exit で確実に破棄するため追跡する
     // (撃破で AC を中断すると StopAllCoroutines で Destroy 前にコルーチンが止まり、光が残るため)。
     private readonly List<GameObject> hitLightGos = new List<GameObject>();
+    // ダメージ光の星。白で1回だけ作り、SpriteRenderer.color でプレイヤー色に染める(命中のたびに作らない)
+    private Texture2D hitStarTex;
+    private Sprite hitStarSprite;
 
     public class HitEffectData
     {
@@ -154,6 +157,12 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
         UnityEngine.Debug.Log("[ActionCommandPhase] 開始");
         routine = StartCoroutine(RunSequence());
+    }
+
+    private void OnDestroy()
+    {
+        if (hitStarSprite != null) Destroy(hitStarSprite);
+        if (hitStarTex != null) Destroy(hitStarTex);
     }
 
     public void Exit()
@@ -509,11 +518,15 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         }
 
         // 光(大きめ・分かりやすく)
-        var tex = PixelFontRenderer.CreatePixelStar(30, col);
-        var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+        if (hitStarSprite == null)
+        {
+            hitStarTex = PixelFontRenderer.CreatePixelStar(30, Color.white);
+            hitStarSprite = Sprite.Create(hitStarTex, new Rect(0, 0, hitStarTex.width, hitStarTex.height), new Vector2(0.5f, 0.5f), 100f);
+        }
         var lightGo = new GameObject("DamageLight");
         var sr = lightGo.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
+        sr.sprite = hitStarSprite;
+        sr.color = col;
         sr.sortingOrder = 300;
         lightGo.transform.position = start;
         hitLightGos.Add(lightGo);   // 中断時に Exit で破棄できるよう追跡

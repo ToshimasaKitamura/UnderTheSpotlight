@@ -16,14 +16,27 @@ public static class CursorSprite
     /// <summary>先端の「左上からの画素オフセット」(y-down)。IMGUI(GUI.DrawTexture)で先端を座標に合わせる用。</summary>
     public static readonly Vector2 TipPixel = new Vector2(8f, 4f);
 
-    /// <summary>定番の矢印マウスポインタ(指定色＋暗いアウトライン)。先端が左上。</summary>
+    // 色ごとに1つだけ作って共有する(プレイヤー色は数色なので数は増えない)
+    private static readonly System.Collections.Generic.Dictionary<Color, Sprite> pointerCache =
+        new System.Collections.Generic.Dictionary<Color, Sprite>();
+
+    /// <summary>
+    /// 定番の矢印マウスポインタ(指定色＋暗いアウトライン)。先端が左上。
+    /// **色ごとに共有**するので、受け取った側で Destroy しないこと(以前はラウンドごとに新しく作られ、解放されずに残っていた)。
+    /// </summary>
     public static Sprite CreatePointer(Color color)
     {
+        if (pointerCache.TryGetValue(color, out var cached) && cached != null) return cached;
         var tex = CreatePointerTexture(color);
-        return Sprite.Create(tex, new Rect(0, 0, PointerSize, PointerSize), TipPivot, PointerSize);
+        var sprite = Sprite.Create(tex, new Rect(0, 0, PointerSize, PointerSize), TipPivot, PointerSize);
+        pointerCache[color] = sprite;
+        return sprite;
     }
 
-    /// <summary>矢印ポインタの Texture2D。uGUI ではなく IMGUI(GUI.DrawTexture)で描く画面向け。</summary>
+    /// <summary>
+    /// 矢印ポインタの Texture2D。uGUI ではなく IMGUI(GUI.DrawTexture)で描く画面向け。
+    /// こちらは毎回新しく作る(呼び出し側の所有。不要になったら破棄する)。
+    /// </summary>
     public static Texture2D CreatePointerTexture(Color color)
     {
         int size = PointerSize;
