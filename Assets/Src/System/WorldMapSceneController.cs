@@ -31,6 +31,7 @@ public class WorldMapSceneController : MonoBehaviour
     private bool[] joined = new bool[MaxPlayers];
     // オフラインのローカル参加: 各スロットに割り当てたゲームパッド(スロット0=P1はキーボード操作なので未使用)
     private readonly Gamepad[] slotPad = new Gamepad[MaxPlayers];
+    private bool wasNetActive; // 前フレームでオンライン・ロビーが稼働していたか
     // オフラインはホットシート(P1がナビ)なのでカーソルはP1のみ描画する
     private static readonly bool[] LeaderOnlyCursorMask = { true, false, false, false };
     private int activePlayer = 0;                // 直近に操作したプレイヤー
@@ -93,6 +94,8 @@ public class WorldMapSceneController : MonoBehaviour
         // オンライン・ロビーが稼働中なら、参加状況(スロット占有)を募集枠へ反映する(参加はネットが管理)。
         bool netActive = NetworkLobby.Available && NetworkLobby.Instance.Status == NetLobbyStatus.Active;
         if (netActive) MirrorNetRoster();
+        else if (wasNetActive) ResetToOfflineSolo(); // オンラインを抜けたら、ネットの参加者を募集枠に残さない
+        wasNetActive = netActive;
 
         // ロビーパネルを開いている間はマップ操作を停止(コード入力等と競合させない)。
         if (netPanel != null && netPanel.IsOpen)
@@ -223,6 +226,20 @@ public class WorldMapSceneController : MonoBehaviour
 
     private static int LocalNetSlot()
         => NetworkLobby.Available ? NetworkLobby.Instance.LocalSlot : -1;
+
+    /// <summary>
+    /// オンライン・ロビーを抜けた(退出/切断)ときに、募集枠をオフラインの1人(P1)に戻す。
+    /// ネットの参加者はゲームパッドの割当(slotPad)を持たないため、残すとBボタンで外せず、そのままの人数で出撃してしまう。
+    /// </summary>
+    private void ResetToOfflineSolo()
+    {
+        for (int p = 0; p < MaxPlayers; p++) { joined[p] = (p == 0); slotPad[p] = null; }
+        activePlayer = 0;
+        if (GameSceneManager.Instance != null)
+            for (int i = 0; i < GameSceneManager.Instance.joinedPlayers.Length; i++)
+                GameSceneManager.Instance.joinedPlayers[i] = (i == 0);
+        Debug.Log("[WorldMapSceneController] オンラインを抜けたため、募集枠をオフラインの1人(P1)に戻しました。");
+    }
 
     /// <summary>オンライン・ロビーの参加状況(スロット占有)を募集枠へ反映する。</summary>
     private void MirrorNetRoster()
