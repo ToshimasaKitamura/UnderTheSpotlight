@@ -208,7 +208,8 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         int chosenIndex;
         if (debugForceGroupGame >= 0)
         {
-            chosenIndex = registry.Count > 0 ? (debugForceGroupGame % registry.Count) : 0;
+            // 範囲外は黙って折り返さない(4 を指定して れんだ が出ると原因が分からないため)。Create がエラーを出す
+            chosenIndex = debugForceGroupGame;
         }
         else
         {
