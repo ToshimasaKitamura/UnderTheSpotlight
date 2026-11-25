@@ -86,3 +86,7 @@ Temp_SpritePreview/
 # デバッグ/検証の一時生成物(ゲーム本体ではない)
 /Screenshots/
 /AgentScripts/
+
+# OS が作るファイル
+.DS_Store
+Thumbs.db
