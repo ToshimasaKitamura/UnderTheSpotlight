@@ -25,6 +25,7 @@
 | ゲームバランス数値 | `Assets/Data/csv/*` ＋ [Design/CsvWorkflow.md](Design/CsvWorkflow.md) |
 | キャラとスプライトの対応 | [CharacterData_Sprite_Mapping.md](CharacterData_Sprite_Mapping.md) |
 | 修正の経緯・既知の罠 | [開発ナレッジ.md](開発ナレッジ.md) |
+| Git 運用（ブランチ・リリース・タグ） | [Git運用.md](Git運用.md) |
 
 > 上表に無い新トピックを書くときは、**まず正典をどこにするか決めてこの表に1行足す**。決めずに複数箇所へ書かない。
 
@@ -44,6 +45,7 @@
 
 ## その他
 
+- [Git運用.md](Git運用.md) — ブランチ戦略（main=リリース / develop=開発 / feature・fix）とリリース手順
 - [修正PDCA.md](修正PDCA.md) — 修正を Plan→Do→Check→Act で回す仕組み（`/pdca`）
 - [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) — 開発ガイドライン
 - [TroubleShooting_SpriteNotVisible.md](TroubleShooting_SpriteNotVisible.md) — 既知のトラブル対処
