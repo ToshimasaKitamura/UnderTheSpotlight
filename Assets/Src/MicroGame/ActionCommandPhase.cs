@@ -93,6 +93,9 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     // ダメージ光の星。白で1回だけ作り、SpriteRenderer.color でプレイヤー色に染める(命中のたびに作らない)
     private Texture2D hitStarTex;
     private Sprite hitStarSprite;
+    // 揺れ演出で白くしたボスの SpriteRenderer と元の色(揺れの途中で Exit したときに戻す)
+    private SpriteRenderer shakeSr;
+    private Color shakeBaseCol;
 
     public class HitEffectData
     {
@@ -177,6 +180,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         hitLightGos.Clear();
         // 揺れ途中で止まった敵をホーム位置へ戻す
         if (cachedEnemyTf != null) cachedEnemyTf.position = cachedEnemyHome;
+        if (shakeSr != null) { shakeSr.color = shakeBaseCol; shakeSr = null; }
         hitEffects.Clear();
         bannerText = "";
         UnityEngine.Debug.Log("[ActionCommandPhase] 終了");
@@ -565,6 +569,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
         var sr = enemy.GetComponentInChildren<SpriteRenderer>();
         Color baseCol = sr != null ? sr.color : Color.white;
+        shakeSr = sr; shakeBaseCol = baseCol; // 途中で Exit しても色を戻せるよう覚えておく
         if (sr != null) sr.color = Color.Lerp(baseCol, Color.white, 0.65f);
 
         float dur = 0.26f, t = 0f, amp = 0.2f;
@@ -579,6 +584,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
         }
         if (enemy != null) enemy.position = cachedEnemyHome;
         if (sr != null) sr.color = baseCol;
+        shakeSr = null;
         enemyShakeCo = null;
     }
 
