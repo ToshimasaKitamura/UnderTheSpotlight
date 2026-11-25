@@ -40,6 +40,7 @@ public static class CsvImporter
     /// </summary>
     public static string ReimportAllSilent()
     {
+        errorCount = 0;
         int cards = ReimportCards();
         int decks = ReimportDecks();
         bool tuning = ReimportTuning();
@@ -47,7 +48,12 @@ public static class CsvImporter
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         string summary = $"カード {cards} 件 / デッキ {decks} 件 / GameTuning {(tuning ? "更新" : "スキップ")} / 敵部位 {enemies} 件";
-        Debug.Log($"[CsvImporter] CSV インポート完了: {summary}");
+        if (errorCount > 0)
+        {
+            summary += $"\n\n⚠ 読めない値が {errorCount} 件ありました(既定値を使用)。Console のエラーで場所を確認してください。";
+            Debug.LogError($"[CsvImporter] CSV インポート完了(読めない値 {errorCount} 件。上のエラーを確認): {summary}");
+        }
+        else Debug.Log($"[CsvImporter] CSV インポート完了: {summary}");
         return summary;
     }
 
@@ -91,11 +97,18 @@ public static class CsvImporter
         if (!Directory.Exists(CardAssetDir)) Directory.CreateDirectory(CardAssetDir);
 
         int count = 0;
+        var seenIds = new HashSet<string>();
         for (int r = 1; r < rows.Count; r++)
         {
+            ctxRow = r + 1; // エラー表示用(ファイル上の行番号。1行目=見出し)
             var row = rows[r];
             string id = Get(row, col, "id");
             if (string.IsNullOrWhiteSpace(id) || id.StartsWith("#")) continue; // コメント行スキップ
+            if (!seenIds.Add(id))
+            {
+                Debug.LogError($"[CsvImporter] {ctxFile} {ctxRow}行目: カード id '{id}' が重複しています。後の行で上書きされます。");
+                errorCount++;
+            }
 
             CardData card;
             if (!existing.TryGetValue(id, out card) || card == null)
@@ -127,6 +140,11 @@ public static class CsvImporter
             EditorUtility.SetDirty(card);
             count++;
         }
+
+        // CSV から消えたカードのアセットは自動では消さない(参照が切れるため)。気づけるように警告する
+        foreach (var kv in existing)
+            if (!seenIds.Contains(kv.Key))
+                Debug.LogWarning($"[CsvImporter] カード '{kv.Key}' は {CardsCsv} にありませんが、アセット({AssetDatabase.GetAssetPath(kv.Value)})は残っています。不要なら削除してください。");
         return count;
     }
 
@@ -160,6 +178,7 @@ public static class CsvImporter
         if (s == "2" || s.Equals("Heal", StringComparison.OrdinalIgnoreCase) || s == "回復" || s == "ヒール") return CardCategory.Heal;
         if (s == "3" || s.Equals("Buff", StringComparison.OrdinalIgnoreCase) || s == "バフ" || s == "強化") return CardCategory.Buff;
         if (s == "4" || s.Equals("Special", StringComparison.OrdinalIgnoreCase) || s == "特殊" || s == "スペシャル") return CardCategory.Special;
+        ReportBad(s, "カテゴリ(攻撃/防御/回復/バフ/特殊)");
         return CardCategory.Attack;
     }
 
@@ -182,6 +201,7 @@ public static class CsvImporter
         if (s == "0" || s.Equals("Basic", StringComparison.OrdinalIgnoreCase) || s == "基本" || s == "ノーマル") return CardTier.Basic;
         if (s == "1" || s.Equals("Special", StringComparison.OrdinalIgnoreCase) || s == "特殊" || s == "レア") return CardTier.Special;
         if (s == "2" || s.Equals("Ultimate", StringComparison.OrdinalIgnoreCase) || s == "必殺" || s == "フィナーレ" || s == "ウルトラ") return CardTier.Ultimate;
+        ReportBad(s, "ティア(基本/特殊/必殺)");
         return CardTier.Basic;
     }
 
@@ -203,6 +223,7 @@ public static class CsvImporter
         if (s == "1" || s.Equals("Upper", StringComparison.OrdinalIgnoreCase) || s == "上半身" || s == "上部") return CardAttackRange.Upper;
         if (s == "2" || s.Equals("Lower", StringComparison.OrdinalIgnoreCase) || s == "下半身" || s == "下部") return CardAttackRange.Lower;
         if (s == "3" || s.Equals("All", StringComparison.OrdinalIgnoreCase) || s == "全体" || s == "全員") return CardAttackRange.All;
+        ReportBad(s, "攻撃範囲(単体/上半身/下半身/全体)");
         return category == CardCategory.Attack ? CardAttackRange.Single : CardAttackRange.All;
     }
 
@@ -247,6 +268,7 @@ public static class CsvImporter
     private static Color ParseColor(string s, CardCategory category)
     {
         if (ColorUtility.TryParseHtmlString((s ?? "").Trim(), out var c)) return c;
+        ReportBad(s, "色(#RRGGBB)");
         switch (category)
         {
             case CardCategory.Attack: return new Color(1f, 0.35f, 0.35f, 1f);
@@ -282,6 +304,7 @@ public static class CsvImporter
         var bucket = new Dictionary<string, List<DeckDefinition.Entry>>();
         for (int r = 1; r < rows.Count; r++)
         {
+            ctxRow = r + 1; // エラー表示用(ファイル上の行番号。1行目=見出し)
             string deckName = Get(rows[r], col, "deckName");
             string cardId = Get(rows[r], col, "cardId");
             int copies = ParseInt(Get(rows[r], col, "copies"), 0);
@@ -348,6 +371,7 @@ public static class CsvImporter
         var bucket = new Dictionary<string, (string display, List<EnemyPart> parts)>();
         for (int r = 1; r < rows.Count; r++)
         {
+            ctxRow = r + 1; // エラー表示用(ファイル上の行番号。1行目=見出し)
             string enemyId = Get(rows[r], col, "enemyId");
             string enemyDisplay = Get(rows[r], col, "enemyDisplayName");
             string partId = Get(rows[r], col, "partId");
@@ -473,11 +497,13 @@ public static class CsvImporter
 
         for (int r = 1; r < rows.Count; r++)
         {
+            ctxRow = r + 1; // エラー表示用(ファイル上の行番号。1行目=見出し)
             string k = Get(rows[r], col, "key");
             string v = Get(rows[r], col, "value");
             string d = Get(rows[r], col, "description");
             if (string.IsNullOrWhiteSpace(k)) continue;
             k = k.Trim();
+            ctxKey = $"value(key={k})";
             if (!ApplyKnownTuning(tuning, k, v))
             {
                 tuning.SetCustom(k, v, d);
@@ -582,7 +608,21 @@ public static class CsvImporter
     // ------------ CSV utilities ------------
     private static List<List<string>> ReadCsv(string path)
     {
-        string text = File.ReadAllText(path, Encoding.UTF8);
+        ctxFile = Path.GetFileName(path);
+        ctxRow = 0;
+        string text;
+        try
+        {
+            // 不正なバイトで例外を出す UTF-8 として読む(既定の UTF8 は黙って「?」に置き換えるため、文字化けに気づけない)
+            text = new UTF8Encoding(false, true).GetString(File.ReadAllBytes(path));
+        }
+        catch (DecoderFallbackException)
+        {
+            errorCount++;
+            Debug.LogError($"[CsvImporter] {ctxFile} は UTF-8 ではありません(Excel の既定の「CSV」は Shift-JIS で保存されます)。" +
+                           "Excel の「名前を付けて保存 → CSV UTF-8 (コンマ区切り)」で保存し直してください。このファイルは取り込みません。");
+            return new List<List<string>>();
+        }
         if (text.Length > 0 && text[0] == '\uFEFF') text = text.Substring(1);
         var rows = new List<List<string>>();
         var cur = new List<string>();
@@ -625,18 +665,35 @@ public static class CsvImporter
 
     private static string Get(List<string> row, Dictionary<string, int> col, string key)
     {
+        ctxKey = key; // 直後の Parse で読めなかったときのエラー表示用
         if (!col.TryGetValue(key, out int i) || i >= row.Count) return "";
         return row[i];
+    }
+
+    // ---- 読めない値の報告(黙って既定値にしない) ----
+    private static string ctxFile = "";
+    private static int ctxRow;
+    private static string ctxKey = "";
+    private static int errorCount;
+
+    /// <summary>空でない値が読めなかったときに、ファイル・行・列・値を示すエラーを出す(空欄は既定値の指定として扱う)。</summary>
+    private static void ReportBad(string value, string expected)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        errorCount++;
+        Debug.LogError($"[CsvImporter] {ctxFile} {ctxRow}行目 列 '{ctxKey}': 値 '{value.Trim()}' を {expected} として読めません。既定値を使います。");
     }
 
     private static int ParseInt(string s, int fallback)
     {
         if (int.TryParse((s ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v)) return v;
+        ReportBad(s, "整数");
         return fallback;
     }
     private static float ParseFloat(string s, float fallback)
     {
         if (float.TryParse((s ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float v)) return v;
+        ReportBad(s, "数値");
         return fallback;
     }
     private static bool ParseBool(string s, bool fallback)
@@ -644,18 +701,16 @@ public static class CsvImporter
         s = (s ?? "").Trim().ToLowerInvariant();
         if (s == "1" || s == "true" || s == "yes" || s == "y") return true;
         if (s == "0" || s == "false" || s == "no" || s == "n") return false;
+        ReportBad(s, "true/false");
         return fallback;
     }
     private static T ParseEnum<T>(string s, T fallback) where T : struct, Enum
     {
         s = (s ?? "").Trim();
         if (s.Length == 0) return fallback;
-        if (Enum.TryParse<T>(s, true, out var v)) return v;
-        if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int i))
-        {
-            try { return (T)Enum.ToObject(typeof(T), i); }
-            catch { return fallback; }
-        }
+        // Enum.TryParse は "99" のような数字も「未定義の値」として通すため、定義済みかを確かめる
+        if (Enum.TryParse<T>(s, true, out var v) && Enum.IsDefined(typeof(T), v)) return v;
+        ReportBad(s, $"{typeof(T).Name}({string.Join("/", Enum.GetNames(typeof(T)))})");
         return fallback;
     }
     private static string[] SplitList(string s, char sep = ';')
