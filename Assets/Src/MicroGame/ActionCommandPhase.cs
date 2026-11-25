@@ -252,107 +252,41 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
 
         bannerText = chosenName;
 
-        // グループ参加型(GroupButton / GroupRelay 派生)か、個別順次参加型かを判定
-        // それ以外(Mash/Timing 等の旧1人用)は
-        // 1人用の場合は人数分ループさせる(本来のパーティゲームの挙動)。
-        bool isGroupGame = (game is GroupButtonMicroGame) || (game is GroupRelayMicroGame);
-
+        // アクションコマンドはすべてグループ型(GroupRelayMicroGame 派生: 全員で1回・リレー式)。
         // ボスを倒した瞬間にアクションコマンドを止めるためのフラグ
         bool enemyDefeated = false;
 
-        if (isGroupGame)
+        var k = mods.Resolve(0, difficultyTuning);
+        var ctx = new MicroGameContext
         {
-            var k = mods.Resolve(0, difficultyTuning);
-            var ctx = new MicroGameContext
-            {
-                uiRoot = microRoot,
-                rng = rng,
-                roundIndex = 0,
-                playerIndex = 0,
-                playerCount = playerCount,
-                timeLimit = k.timeLimit,
-                speedMul = k.speedMul,
-                buttonCount = k.buttonCount,
-                rangeScale = k.rangeScale,
-                interference = k.interference,
-                accent = (playerColors != null && playerColors.Length > 0) ? playerColors[0] : Color.white,
-                playerColors = playerColors,
-                OnPlayerAttack = HandlePlayerAttack,
-            };
+            uiRoot = microRoot,
+            rng = rng,
+            roundIndex = 0,
+            playerIndex = 0,
+            playerCount = playerCount,
+            timeLimit = k.timeLimit,
+            speedMul = k.speedMul,
+            buttonCount = k.buttonCount,
+            rangeScale = k.rangeScale,
+            interference = k.interference,
+            accent = (playerColors != null && playerColors.Length > 0) ? playerColors[0] : Color.white,
+            playerColors = playerColors,
+            OnPlayerAttack = HandlePlayerAttack,
+        };
 
-            currentCtx = ctx;
-            game.Begin(ctx);
-            bool done = false;
-            while (!done)
-            {
-                done = game.Tick(Time.deltaTime);
-                // 誰かの攻撃でボスを倒したら、残りのプレイヤーの手番は行わず即中断する
-                // (順次参加型の分岐と同じ挙動。撃破演出は BattleResultPhase が担当)
-                if (IsEnemyDefeated()) { enemyDefeated = true; break; }
-                yield return null;
-            }
-            game.Cleanup();
-            RoundsPlayed = 1;
-        }
-        else
+        currentCtx = ctx;
+        game.Begin(ctx);
+        bool done = false;
+        while (!done)
         {
-            // 順次参加型: 1人ずつミニゲームを実行
-            for (int p = 0; p < playerCount; p++)
-            {
-                // 各プレイヤーのターン開始前に少し待機
-                if (p > 0) yield return new WaitForSeconds(interRoundDelay);
-
-                var k = mods.Resolve(p, difficultyTuning);
-                var ctx = new MicroGameContext
-                {
-                    uiRoot = microRoot,
-                    rng = rng,
-                    roundIndex = p,
-                    playerIndex = p,
-                    playerCount = 1, // このプレイヤーのみ
-                    timeLimit = k.timeLimit,
-                    speedMul = k.speedMul,
-                    buttonCount = k.buttonCount,
-                    rangeScale = k.rangeScale,
-                    interference = k.interference,
-                    accent = (playerColors != null && p < playerColors.Length) ? playerColors[p] : Color.white,
-                    playerColors = playerColors,
-                    OnPlayerAttack = HandlePlayerAttack,
-                };
-
-                // 各プレイヤーごとに同じ種目を作り直す(Cleanup/Begin のライフサイクルのため)
-                if (p > 0) game = registry.Create(chosenIndex, out _);
-
-                game.Begin(ctx);
-                bool done = false;
-                while (!done)
-                {
-                    done = game.Tick(Time.deltaTime);
-                    yield return null;
-                }
-
-                if (game.Succeeded)
-                {
-                    // 個別ゲームの場合は成功時に自分で HandlePlayerAttack を呼ぶ必要がある
-                    // (Mash 等が OnPlayerAttack を呼んでいないため)
-                    HandlePlayerAttack(p);
-                }
-
-                game.Cleanup();
-                RoundsPlayed++;
-
-                // ボスを倒したら残りのプレイヤーのコマンドは行わず即中断
-                if (IsEnemyDefeated()) { enemyDefeated = true; break; }
-
-                // 次のプレイヤーへのバナー更新
-                if (p < playerCount - 1)
-                {
-                    bannerText = $"NEXT: P{p + 2}";
-                    yield return new WaitForSeconds(interRoundDelay);
-                    bannerText = chosenName;
-                }
-            }
+            done = game.Tick(Time.deltaTime);
+            // 誰かの攻撃でボスを倒したら、残りのプレイヤーの手番は行わず即中断する
+            // (撃破演出は BattleResultPhase が担当)
+            if (IsEnemyDefeated()) { enemyDefeated = true; break; }
+            yield return null;
         }
+        game.Cleanup();
+        RoundsPlayed = 1;
 
         // 集計表示(命中数=SuccessCount)。ボス撃破で中断した場合は演出を待たせず即結果へ。
         if (!enemyDefeated)
@@ -384,7 +318,7 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     }
 
     /// <summary>
-    /// GroupButtonMicroGame から、プレイヤー N が命中した瞬間に呼ばれる。
+    /// グループ型ミニゲームから、プレイヤー N が命中した瞬間に呼ばれる。
     /// 1) 「+ダメージ」演出
     /// 2) 攻撃カードなら EnemyRuntimeState に即時ダメージ反映
     /// 3) 非攻撃カードは BattleEffectProcessor で処理
