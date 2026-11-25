@@ -12,7 +12,7 @@ using UnityEngine.InputSystem;
 /// </summary>
 public class DebugRoomController : MonoBehaviour
 {
-    [Tooltip("弾幕リストの元になる全ステージ(DebugRoomSetup が自動割当)。")]
+    [Tooltip("弾幕リストの元になる全ステージ(DebugRoomScene の Inspector で割り当てる)。")]
     [SerializeField] private StageData[] stages;
 
     [Tooltip("弾幕以外(AC/キャラ/通常)で使う既定ステージ。")]
@@ -146,9 +146,18 @@ public class DebugRoomController : MonoBehaviour
         _sel = Mathf.Clamp(_sel, 0, Mathf.Max(0, _entries.Count - 1));
     }
 
+    // 起動を1回受け付けたら、シーンが切り替わるまで入力を無視する
+    // (フェード中に別の項目で Enter すると、DebugLaunch だけ後の選択で上書きされ、前の項目のバトルが別の設定で始まるため)
+    private bool _launching;
+
+    private void OnDestroy()
+    {
+        if (_px != null) Destroy(_px);
+    }
+
     private void Update()
     {
-        if (_entries.Count == 0) return;
+        if (_entries.Count == 0 || _launching) return;
         var kb = Keyboard.current;
         if (kb == null) return;
 
@@ -220,13 +229,14 @@ public class DebugRoomController : MonoBehaviour
     private void LaunchDanmaku(StageData stage, int bossIdx)
     {
         if (stage == null) return;
+        DebugLaunch.ResetForNewLaunch(); // 前回の上書き用 EnemyData を破棄(実ボスなので上書きは使わない)
         DebugLaunch.Current = DebugLaunch.Mode.Danmaku;
-        DebugLaunch.OverrideEnemy = null; // 実ボスなので上書きは使わない
         var gsm = GameSceneManager.Instance;
         if (gsm == null) { Debug.LogError("[DebugRoom] GameSceneManager が見つかりません。"); return; }
         gsm.selectedStage = stage;
         gsm.bossIndex = bossIdx;
         Debug.Log($"[DebugRoom] 弾幕: {stage.name} / B{bossIdx + 1}");
+        _launching = true;
         gsm.GoToBattle(stage, bossIdx);
     }
 
@@ -239,7 +249,7 @@ public class DebugRoomController : MonoBehaviour
         var gsm = GameSceneManager.Instance;
         if (gsm == null) { Debug.LogError("[DebugRoom] GameSceneManager が見つかりません。"); return; }
         var stage = defaultStage != null ? defaultStage : (stages != null && stages.Length > 0 ? stages[0] : null);
-        if (stage == null) { Debug.LogError("[DebugRoom] 既定ステージが未設定です。DebugRoomSetup で defaultStage を割り当ててください。"); return; }
+        if (stage == null) { Debug.LogError("[DebugRoom] 既定ステージが未設定です。DebugRoomScene の DebugRoomController で defaultStage を割り当ててください。"); return; }
 
         var e = ScriptableObject.CreateInstance<EnemyData>();
         e.hideFlags = HideFlags.HideAndDontSave; // シーン遷移/未使用アセット回収で消えないように
@@ -249,19 +259,21 @@ public class DebugRoomController : MonoBehaviour
         e.danmakuPhases = new List<DanmakuPhase>(v.phases); // フェーズ列が単一パラメータより優先される
         e.parts = new List<EnemyPart> { new EnemyPart { id = "core", displayName = "本体", maxHp = 999 } };
 
+        DebugLaunch.ResetForNewLaunch();
         DebugLaunch.Current = DebugLaunch.Mode.Danmaku;
-        DebugLaunch.OverrideEnemy = e;
+        DebugLaunch.SetRuntimeOverride(e); // 前回作った EnemyData は破棄される
         gsm.selectedStage = stage;
         gsm.bossIndex = 0;
         Debug.Log($"[DebugRoom] 弾種検証: {v.name} ({v.tag}, {v.sprite}) ※ステージ/ボス未割当");
+        _launching = true;
         gsm.GoToBattle(stage, 0);
     }
 
     /// <summary>弾幕以外のモード(AC/キャラ/通常)を既定ステージで起動。</summary>
     private void Launch(DebugLaunch.Mode mode)
     {
+        DebugLaunch.ResetForNewLaunch();
         DebugLaunch.Current = mode;
-        DebugLaunch.OverrideEnemy = null;
         var gsm = GameSceneManager.Instance;
         if (gsm == null) { Debug.LogError("[DebugRoom] GameSceneManager が見つかりません。"); return; }
         var stage = defaultStage != null ? defaultStage : (stages != null && stages.Length > 0 ? stages[0] : null);
@@ -269,12 +281,14 @@ public class DebugRoomController : MonoBehaviour
         gsm.selectedStage = stage;
         gsm.bossIndex = 0;
         Debug.Log($"[DebugRoom] 起動モード={mode}, stage={stage.name}");
+        _launching = true;
         gsm.GoToBattle(stage, 0);
     }
 
     private void GoTitle()
     {
-        DebugLaunch.Clear();
+        DebugLaunch.ResetForNewLaunch();
+        _launching = true;
         if (GameSceneManager.Instance != null) GameSceneManager.Instance.GoToTitle();
     }
 }

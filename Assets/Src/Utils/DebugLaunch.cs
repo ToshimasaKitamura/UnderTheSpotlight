@@ -30,4 +30,31 @@ public static class DebugLaunch
         Current = Mode.None;
         OverrideEnemy = null;
     }
+
+    // デバッグ室が実行時に作った EnemyData(HideAndDontSave なので自動では回収されない)
+    private static EnemyData runtimeEnemy;
+
+    /// <summary>デバッグ室で実行時に作った EnemyData を差し込む。前に作ったものは破棄する。</summary>
+    public static void SetRuntimeOverride(EnemyData e)
+    {
+        ReleaseRuntimeEnemy();
+        runtimeEnemy = e;
+        OverrideEnemy = e;
+    }
+
+    /// <summary>
+    /// 実行時に作った EnemyData を破棄して Clear する。バトルが動いていないとき(デバッグ室から起動する直前)に呼ぶ。
+    /// バトル中(Esc でフェード中など)に破棄すると、まだ参照しているバトルが壊れるため Clear と分けている。
+    /// </summary>
+    public static void ResetForNewLaunch()
+    {
+        ReleaseRuntimeEnemy();
+        Clear();
+    }
+
+    private static void ReleaseRuntimeEnemy()
+    {
+        if (runtimeEnemy != null) UnityEngine.Object.Destroy(runtimeEnemy);
+        runtimeEnemy = null;
+    }
 }
