@@ -149,32 +149,47 @@ public class ResultSceneController : MonoBehaviour
             }
         }
 
-        // キーボード(ゲームオーバー時はボタン選択を優先し、決定キーで勝手に遷移しない)
+        // キーボード / ゲームパッドでボタンを選んで決定する(マウスのクリックも使える)。
+        // 以前は勝利時しか決定キーが効かず、ゲームオーバー時の「再チャレンジ」はマウスでしか押せなかった。
         var kb = Keyboard.current;
-        if (kb != null)
-        {
-            if (isVictory && (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame))
-            {
-                GameSceneManager.Instance?.GoToWorldMap();
-            }
-            if (kb.escapeKey.wasPressedThisFrame)
-            {
-                GameSceneManager.Instance?.GoToTitle();
-            }
-        }
-
-        // ゲームパッド
         var gp = Gamepad.current;
-        if (gp != null)
+        int count = ButtonLabels().Length;
+
+        bool up = (kb != null && (kb.upArrowKey.wasPressedThisFrame || kb.wKey.wasPressedThisFrame))
+               || (gp != null && (gp.dpad.up.wasPressedThisFrame || gp.leftStick.up.wasPressedThisFrame));
+        bool down = (kb != null && (kb.downArrowKey.wasPressedThisFrame || kb.sKey.wasPressedThisFrame))
+                 || (gp != null && (gp.dpad.down.wasPressedThisFrame || gp.leftStick.down.wasPressedThisFrame));
+        if (up) selectedButton = (selectedButton + count - 1) % count;
+        if (down) selectedButton = (selectedButton + 1) % count;
+
+        bool confirm = (kb != null && (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame))
+                    || (gp != null && gp.buttonSouth.wasPressedThisFrame);
+        bool cancel = (kb != null && (kb.escapeKey.wasPressedThisFrame || kb.xKey.wasPressedThisFrame))
+                   || (gp != null && gp.buttonEast.wasPressedThisFrame);
+
+        if (confirm) ActivateButton(selectedButton);
+        else if (cancel) GameSceneManager.Instance?.GoToTitle();
+    }
+
+    // ---- ボタン(勝利: MAP / タイトル、ゲームオーバー: 再チャレンジ / MAP / タイトル) ----
+    private int selectedButton; // 0 が先頭(勝利=MAP、ゲームオーバー=再チャレンジ)
+
+    private static readonly string[] VictoryLabels = { "MAPに戻る", "タイトルに戻る" };
+    private static readonly string[] DefeatLabels = { "同じステージに再チャレンジ", "MAPに戻る", "タイトルに戻る" };
+    private string[] ButtonLabels() => isVictory ? VictoryLabels : DefeatLabels;
+
+    private void ActivateButton(int index)
+    {
+        if (isVictory)
         {
-            if (isVictory && gp.buttonSouth.wasPressedThisFrame)
-            {
-                GameSceneManager.Instance?.GoToWorldMap();
-            }
-            if (gp.buttonEast.wasPressedThisFrame)
-            {
-                GameSceneManager.Instance?.GoToTitle();
-            }
+            if (index == 0) GameSceneManager.Instance?.GoToWorldMap();
+            else GameSceneManager.Instance?.GoToTitle();
+        }
+        else
+        {
+            if (index == 0) RetryStage();
+            else if (index == 1) GameSceneManager.Instance?.GoToWorldMap();
+            else GameSceneManager.Instance?.GoToTitle();
         }
     }
 
@@ -296,19 +311,17 @@ public class ResultSceneController : MonoBehaviour
         float bh = Mathf.Max(48f, Screen.height * 0.075f);
         float gap = bh * 0.28f;
 
-        if (isVictory)
+        var labels = ButtonLabels();
+        float y0 = Screen.height * (isVictory ? 0.6f : 0.54f);
+        for (int i = 0; i < labels.Length; i++)
         {
-            float y = Screen.height * 0.6f;
-            if (GUI.Button(BtnRect(cx, y, bw, bh), "MAPに戻る", style)) GameSceneManager.Instance?.GoToWorldMap();
-            if (GUI.Button(BtnRect(cx, y + (bh + gap), bw, bh), "タイトルに戻る", style)) GameSceneManager.Instance?.GoToTitle();
-        }
-        else
-        {
-            // ゲームオーバー: 再チャレンジ / MAP / タイトル
-            float y = Screen.height * 0.54f;
-            if (GUI.Button(BtnRect(cx, y, bw, bh), "同じステージに再チャレンジ", style)) RetryStage();
-            if (GUI.Button(BtnRect(cx, y + (bh + gap), bw, bh), "MAPに戻る", style)) GameSceneManager.Instance?.GoToWorldMap();
-            if (GUI.Button(BtnRect(cx, y + 2f * (bh + gap), bw, bh), "タイトルに戻る", style)) GameSceneManager.Instance?.GoToTitle();
+            // 選択中のボタンは「> … <」で示す(キーボード/ゲームパッド操作用)
+            string label = (i == selectedButton) ? $"> {labels[i]} <" : labels[i];
+            if (GUI.Button(BtnRect(cx, y0 + i * (bh + gap), bw, bh), label, style))
+            {
+                selectedButton = i;
+                ActivateButton(i);
+            }
         }
     }
 
