@@ -57,7 +57,6 @@ public class TitleView : MonoBehaviour
     private void OnDestroy()
     {
         DestroyTextures();
-        PixelFontRenderer.ClearCache();
     }
 
     private void CalculatePixelScale()

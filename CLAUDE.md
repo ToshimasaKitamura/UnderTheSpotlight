@@ -99,6 +99,9 @@ Check 合格かつ Act 完了で初めて「完了」。
 - 日本語ラベルはインポート済みフォント（`Resources/Fonts/misaki_gothic`）を使う。共通処理は `GameFont.Body()` を経由する
 - 動的フォントを GL/低レベルで自前描画するときは **`RequestCharactersInTexture` → `material.SetPass(0)` → 描画** の順を厳守（逆順だと再構築前の古いアトラスをバインドし、新規文字だけ空描画＝「?」化する）
 
+### テクスチャの所有
+- 実行時に作った Texture2D/Sprite は所有者を1つに決め、所有者だけが破棄する。`PixelFontRenderer.RenderText` の戻り値は呼び出し側の所有(不要になったら `PixelFontRenderer.Release`)。毎フレーム同じ文字を描くなら `CachedTextTexture` を使う
+
 ### 時間(timeScale / fixedDeltaTime)
 - `Time.timeScale` と `Time.fixedDeltaTime` はシーンを跨いで残るグローバル値。演出で変えたら、正常終了・`Exit`・`OnDestroy` のすべてで元に戻す(シーン直接切替では `Exit` が呼ばれない)
 

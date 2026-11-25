@@ -11,6 +11,10 @@ using UnityEngine.UI;
 /// </summary>
 public class WorldMapView : MonoBehaviour
 {
+    // HUD の EXP / ボム数。値が変わったときだけ作り直す(毎フレーム生成しない)
+    private readonly CachedTextTexture hudExpText = new CachedTextTexture();
+    private readonly CachedTextTexture hudBombText = new CachedTextTexture();
+
     [Header("8bit カラー設定（GameColorScheme に一元化）")]
     // 正典: Docs/Specifications/デザインテーマ.md。実行時生成のため既定値をテーマから取得。
     public Color bgColor1 = GameColorScheme.BackgroundTop;
@@ -1346,8 +1350,7 @@ public class WorldMapView : MonoBehaviour
         GUI.DrawTexture(new Rect(labelX, labelY, expIcon.width, expIcon.height), expIcon);
         Destroy(expIcon);
 
-        Texture2D expTex = PixelFontRenderer.RenderText(
-            $"{runProgress.accumulatedExp}", new Color(0.6f, 0.85f, 1f), pixelScale);
+        Texture2D expTex = hudExpText.Get($"{runProgress.accumulatedExp}", new Color(0.6f, 0.85f, 1f), pixelScale);
         if (expTex != null)
         {
             GUI.DrawTexture(new Rect(
@@ -1361,8 +1364,7 @@ public class WorldMapView : MonoBehaviour
         GUI.DrawTexture(new Rect(labelX, bombY, bombIcon.width, bombIcon.height), bombIcon);
         Destroy(bombIcon);
 
-        Texture2D bombTex = PixelFontRenderer.RenderText(
-            $"+{runProgress.accumulatedBombs}", new Color(1f, 0.8f, 0.5f), pixelScale);
+        Texture2D bombTex = hudBombText.Get($"+{runProgress.accumulatedBombs}", new Color(1f, 0.8f, 0.5f), pixelScale);
         if (bombTex != null)
         {
             GUI.DrawTexture(new Rect(
@@ -1396,6 +1398,8 @@ public class WorldMapView : MonoBehaviour
     private void OnDestroy()
     {
         Clear();
+        hudExpText.Dispose();
+        hudBombText.Dispose();
     }
 
     private class NodeUi

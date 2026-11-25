@@ -894,6 +894,7 @@ public static class CardVisualGenerator
         Color[] textPx = textTex.GetPixels();
         int tw = textTex.width;
         int th = textTex.height;
+        PixelFontRenderer.Release(textTex); // ピクセルを写したら不要(所有はこちら)
 
         // パス1: 影（黒・1px右下）を先に描く
         for (int ty = 0; ty < th; ty++)

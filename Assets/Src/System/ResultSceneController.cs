@@ -58,7 +58,11 @@ public class ResultSceneController : MonoBehaviour
     private void OnDestroy()
     {
         DestroyTextures();
+        stageClearText.Dispose();
     }
+
+    // 勝利時の「STAGE CLEAR!」。毎フレーム生成しないよう保持する
+    private readonly CachedTextTexture stageClearText = new CachedTextTexture();
 
     private void CreateTextures()
     {
@@ -255,7 +259,7 @@ public class ResultSceneController : MonoBehaviour
         // サブテキスト（勝利時は追加メッセージ）
         if (isVictory && elapsedTime > 0.5f)
         {
-            Texture2D subTex = PixelFontRenderer.RenderText("STAGE CLEAR!", GameColorScheme.Accent, pixelScale);
+            Texture2D subTex = stageClearText.Get("STAGE CLEAR!", GameColorScheme.Accent, pixelScale);
             if (subTex != null)
             {
                 GUI.DrawTexture(new Rect(
