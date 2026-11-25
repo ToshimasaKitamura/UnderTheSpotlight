@@ -14,7 +14,7 @@ public class TitleView : MonoBehaviour
     [Header("メニュー設定")]
     [SerializeField] private string[] menuItems = { "START GAME", "OPTIONS", "EXIT" };
 
-    // 色はテーマ(GameColorScheme)に一元化。正典: Docs/Specifications/デザインテーマ.md
+    // 色はテーマ(GameColorScheme)に一元化。正典: docs/Specifications/デザインテーマ.md
     //   背景=Background グラデ / タイトル・選択・スター=Accent / メニュー=TextOnDark / サブ=TextMuted
 
     // 参照

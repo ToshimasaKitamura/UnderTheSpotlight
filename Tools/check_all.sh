@@ -9,7 +9,7 @@
 #   終了コード: いずれかに違反(error)があれば 1、無ければ 0
 #
 # ※ これは自動化できる部分のみ。PDCAのCheckでは加えて「症状を再現→解消を確認」
-#   「デグレが無いか」を人/AIが確認すること（Docs/修正PDCA.md 参照）。
+#   「デグレが無いか」を人/AIが確認すること（docs/修正PDCA.md 参照）。
 #
 set -u
 cd "$(dirname "$0")/.." || exit 0
@@ -48,6 +48,6 @@ echo ""
 if [ "$fail" -eq 0 ]; then
   echo "═══ Check: 自動検査は合格。あとは『症状の再現→解消』と『デグレ無し』を確認 ═══"
 else
-  echo "═══ Check: 違反あり。Plan に戻って直す（Docs/修正PDCA.md）═══"
+  echo "═══ Check: 違反あり。Plan に戻って直す（docs/修正PDCA.md）═══"
 fi
 exit $fail

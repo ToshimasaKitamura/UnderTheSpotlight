@@ -18,7 +18,7 @@ public class TitleSceneController : MonoBehaviour
     [SerializeField] private string titleText = "UNDER THE SPOTLIGHT";
     [SerializeField] private string subtitleText = "- 4人協力弾幕アクション -";
 
-    // 色はテーマ(GameColorScheme)に一元化。正典: Docs/Specifications/デザインテーマ.md
+    // 色はテーマ(GameColorScheme)に一元化。正典: docs/Specifications/デザインテーマ.md
 
     public TitleState CurrentState { get; private set; } = TitleState.WaitForStart;
     public float FadeProgress { get; private set; } = 0f;

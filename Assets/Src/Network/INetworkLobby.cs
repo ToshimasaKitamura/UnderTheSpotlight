@@ -107,7 +107,7 @@ public sealed class UnavailableLobby : INetworkLobby
     private const string Reason =
         "オンライン機能は未有効です。Unity Netcode/Relay パッケージを導入し、" +
         "Scripting Define Symbols に UGS_NETCODE を追加、UGS プロジェクト連携(認証+Relay)を有効にしてください。" +
-        "詳細: Docs/Design/Networking_Design.md";
+        "詳細: docs/Design/Networking_Design.md";
 
     public NetLobbyStatus Status { get; private set; } = NetLobbyStatus.Idle;
     public NetLobbyRole Role => NetLobbyRole.None;

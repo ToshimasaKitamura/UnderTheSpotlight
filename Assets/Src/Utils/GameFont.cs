@@ -58,7 +58,7 @@ public static class GameFont
     ///   壊れて描画される)。インポート済みの .ttf アセットは安全に変換できるため、そちらを使う。
     /// </summary>
     // 解決順: ドット感 + 可読性を優先。推奨主フォント PixelMplus（要追加）→ 同梱 misaki_gothic。
-    // 正典（フォント方針）: Docs/Specifications/デザインテーマ.md
+    // 正典（フォント方針）: docs/Specifications/デザインテーマ.md
     private static readonly string[] BodyFontCandidates =
     {
         // 決定(主フォント): PixelMplus12。公式配布名(PixelMplus12-Regular)でもリネーム後(PixelMplus12)でも拾えるよう両対応。

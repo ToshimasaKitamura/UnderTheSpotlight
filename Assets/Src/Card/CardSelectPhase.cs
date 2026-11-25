@@ -2422,7 +2422,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
     /// <summary>
     /// レベルに応じた色を取得
     /// </summary>
-    // カードの文字に規定フォント(GameFont=PixelMplus/misaki)を適用。正典: Docs/Specifications/デザインテーマ.md
+    // カードの文字に規定フォント(GameFont=PixelMplus/misaki)を適用。正典: docs/Specifications/デザインテーマ.md
     private static Font _cardFont;
     private void ApplyCardFont(TextMesh tm)
     {

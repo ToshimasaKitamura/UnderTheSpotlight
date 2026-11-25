@@ -52,7 +52,7 @@
 │       ├── System/    # シーン管理
 │       ├── UI/        # UIコンポーネント
 │       └── Utils/     # ユーティリティ
-├── Docs/              # ドキュメント・仕様書
+├── docs/              # ドキュメント・仕様書
 │   ├── Specifications/    # 仕様書
 │   ├── DEVELOPMENT_GUIDE.md  # 開発ガイド
 │   └── README.md      # ドキュメント概要
@@ -64,17 +64,17 @@
 開発を始める前に、必ず以下のドキュメントを確認してください：
 
 ### 必読ドキュメント
-1. **[開発ガイドライン](Docs/DEVELOPMENT_GUIDE.md)** - 開発ルールとベストプラクティス
-2. **[ゲーム全体仕様](Docs/Specifications/GAME_SPECIFICATION.md)** - ゲームシステムの完全仕様
-3. **[ゲームフロー](Docs/Specifications/GAME_FLOW.md)** - シーン遷移とゲームフロー
-4. **[フォルダ構成](Docs/Specifications/FOLDER_STRUCTURE.md)** - プロジェクト構造
+1. **[開発ガイドライン](docs/DEVELOPMENT_GUIDE.md)** - 開発ルールとベストプラクティス
+2. **[ゲーム全体仕様](docs/Specifications/GAME_SPECIFICATION.md)** - ゲームシステムの完全仕様
+3. **[ゲームフロー](docs/Specifications/GAME_FLOW.md)** - シーン遷移とゲームフロー
+4. **[フォルダ構成](docs/Specifications/FOLDER_STRUCTURE.md)** - プロジェクト構造
 
 ### 開発者向けルール
 - 実装前に必ず仕様書を確認
 - 実装後に仕様との整合性を照合
 - 仕様変更時は仕様書を更新
 
-詳細は [Docs/DEVELOPMENT_GUIDE.md](Docs/DEVELOPMENT_GUIDE.md) を参照。
+詳細は [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md) を参照。
 
 ## ゲームフロー
 
@@ -94,7 +94,7 @@
 
 ### 新機能を追加する場合
 
-1. `Docs/Specifications/` の関連仕様を確認
+1. `docs/Specifications/` の関連仕様を確認
 2. 実装計画を立てる
 3. `Assets/Src/` の適切なフォルダに実装
 4. 仕様との整合性を確認
@@ -106,7 +106,7 @@
 - 日本語コメント推奨
 - `[SerializeField]` で Inspector公開
 
-詳細は [DEVELOPMENT_GUIDE.md](Docs/DEVELOPMENT_GUIDE.md) を参照。
+詳細は [DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md) を参照。
 
 ## ビルド
 
