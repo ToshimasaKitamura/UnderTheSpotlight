@@ -140,7 +140,7 @@ public void SetCharacterData(CharacterData data)
         }
     }
 
-    // 規定フォント(GameFont=misaki/PixelMplus)を Text に設定。正典: Docs/Specifications/デザインテーマ.md
+    // 規定フォント(GameFont=misaki/PixelMplus)を Text に設定。正典: docs/Specifications/デザインテーマ.md
     private static Font _cardFont;
     private static void EnsureFont(Text t)
     {

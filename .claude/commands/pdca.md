@@ -3,7 +3,7 @@ description: 修正をPDCA(Plan→Do→Check→Act)で回す。Checkが通るま
 ---
 
 対象の課題（`$ARGUMENTS` があればそれ。無ければ直近に取り組んでいる問題）を、
-[Docs/修正PDCA.md](Docs/修正PDCA.md) のループに従って修正する。**Check が合格するまで繰り返す**こと。
+[docs/修正PDCA.md](docs/修正PDCA.md) のループに従って修正する。**Check が合格するまで繰り返す**こと。
 
 進め方:
 
@@ -17,7 +17,7 @@ description: 修正をPDCA(Plan→Do→Check→Act)で回す。Checkが通るま
      同じ手を繰り返さない。3ループ超で通らなければ前提（再現・原因）から見直す。
    - 合格するまで Do→Check を繰り返す。
 
-4. **Act** — Check 合格後、`/log-fix` 相当で [Docs/開発ナレッジ.md](Docs/開発ナレッジ.md) に記録し、
+4. **Act** — Check 合格後、`/log-fix` 相当で [docs/開発ナレッジ.md](docs/開発ナレッジ.md) に記録し、
    一般則なら CLAUDE.md「Unity 固有の注意点」へ昇格、機械で防げるなら checker/テストを追加する。
 
 各ループの区切りで、今どのフェーズか・試行ログ・次の一手を簡潔に報告する。

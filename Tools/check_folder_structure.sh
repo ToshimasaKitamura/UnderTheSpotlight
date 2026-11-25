@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # フォルダ構成チェック
-# Docs/フォルダ構成.md の配置ルールに対する逸脱を検出する。
+# docs/フォルダ構成.md の配置ルールに対する逸脱を検出する。
 #
 #   使い方: bash Tools/check_folder_structure.sh [--quiet]
 #     （引数なし）: 全結果を stdout に出力。違反があれば終了コード 1
@@ -71,7 +71,7 @@ nw=${#warnmsgs[@]}
 if [ "$QUIET" -eq 1 ]; then
   if [ "$ne" -gt 0 ]; then
     {
-      echo "フォルダ構成の違反 ${ne} 件（Docs/フォルダ構成.md 準拠に修正してください）:"
+      echo "フォルダ構成の違反 ${ne} 件（docs/フォルダ構成.md 準拠に修正してください）:"
       printf '%s\n' "${errmsgs[@]}"
     } >&2
     exit 2
@@ -81,11 +81,11 @@ fi
 
 # 通常モード: 全部 stdout
 if [ "$ne" -eq 0 ] && [ "$nw" -eq 0 ]; then
-  echo "✓ フォルダ構成OK（逸脱なし）— Docs/フォルダ構成.md 準拠"
+  echo "✓ フォルダ構成OK（逸脱なし）— docs/フォルダ構成.md 準拠"
   exit 0
 fi
 [ "$ne" -gt 0 ] && printf '%s\n' "${errmsgs[@]}"
 [ "$nw" -gt 0 ] && printf '%s\n' "${warnmsgs[@]}"
-echo "── 違反 ${ne} 件 / 警告 ${nw} 件（詳細: Docs/フォルダ構成.md）──"
+echo "── 違反 ${ne} 件 / 警告 ${nw} 件（詳細: docs/フォルダ構成.md）──"
 [ "$ne" -gt 0 ] && exit 1
 exit 0

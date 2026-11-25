@@ -19,7 +19,7 @@ public class WorldMapView : MonoBehaviour
     private readonly CachedTextTexture hudBombText = new CachedTextTexture();
 
     [Header("8bit カラー設定（GameColorScheme に一元化）")]
-    // 正典: Docs/Specifications/デザインテーマ.md。実行時生成のため既定値をテーマから取得。
+    // 正典: docs/Specifications/デザインテーマ.md。実行時生成のため既定値をテーマから取得。
     public Color bgColor1 = GameColorScheme.BackgroundTop;
     public Color bgColor2 = GameColorScheme.BackgroundBottom;
     public Color nodeColor = GameColorScheme.Main;          // 未到達ノード

@@ -258,7 +258,7 @@ void OnDestroy()
 ### 自動チェック項目
 
 実装完了時、以下を自動的に確認：
-- [ ] Docs/Specifications/ 内の関連仕様を読んだか
+- [ ] docs/Specifications/ 内の関連仕様を読んだか
 - [ ] 仕様と実装が一致しているか
 - [ ] 新機能の場合、仕様書を更新したか
 - [ ] コーディング規約に従っているか
@@ -284,7 +284,7 @@ void OnDestroy()
 ```
 1. タスク受領
    ↓
-2. 仕様書を読む（Docs/Specifications/）
+2. 仕様書を読む（docs/Specifications/）
    ↓
 3. 既存コードを確認
    ↓

@@ -13,7 +13,7 @@
 #
 set -u
 cd "$(dirname "$0")/.." || exit 0
-[ -d Docs ] || exit 0
+[ -d docs ] || exit 0
 
 QUIET=0
 [ "${1:-}" = "--quiet" ] && QUIET=1
@@ -23,7 +23,7 @@ err()  { errmsgs+=("  [違反] $1"); }
 warn() { warnmsgs+=("  [警告] $1"); }
 
 docs=()
-while IFS= read -r d; do docs+=("$d"); done < <(find Docs README.md -name "*.md" 2>/dev/null)
+while IFS= read -r d; do docs+=("$d"); done < <(find docs README.md -name "*.md" 2>/dev/null)
 
 # 1) 相対リンク切れ
 for f in "${docs[@]}"; do
@@ -48,7 +48,7 @@ done
 
 # 2) Specifications が言及するシーンが実在するか
 specs=()
-while IFS= read -r s; do specs+=("$s"); done < <(find Docs/Specifications -name "*.md" 2>/dev/null)
+while IFS= read -r s; do specs+=("$s"); done < <(find docs/Specifications -name "*.md" 2>/dev/null)
 if [ "${#specs[@]}" -gt 0 ]; then
   while IFS= read -r scene; do
     [ -n "$scene" ] || continue
@@ -88,6 +88,6 @@ if [ "$ne" -eq 0 ] && [ "$nw" -eq 0 ]; then
 fi
 [ "$ne" -gt 0 ] && printf '%s\n' "${errmsgs[@]}"
 [ "$nw" -gt 0 ] && printf '%s\n' "${warnmsgs[@]}"
-echo "── 違反 ${ne} 件 / 警告 ${nw} 件（正典と所有の考え方: Docs/README.md）──"
+echo "── 違反 ${ne} 件 / 警告 ${nw} 件（正典と所有の考え方: docs/README.md）──"
 [ "$ne" -gt 0 ] && exit 1
 exit 0

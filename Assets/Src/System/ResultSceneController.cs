@@ -11,7 +11,7 @@ public class ResultSceneController : MonoBehaviour
     [SerializeField] private string victoryText = "VICTORY!";
     [SerializeField] private string defeatText = "GAME OVER";
 
-    // 色はテーマ(GameColorScheme)に一元化。正典: Docs/Specifications/デザインテーマ.md
+    // 色はテーマ(GameColorScheme)に一元化。正典: docs/Specifications/デザインテーマ.md
     //   勝利=Accent(金) / 敗北=Danger(赤) / 背景=Background グラデ
 
     private bool isVictory;

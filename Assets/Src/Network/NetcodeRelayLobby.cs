@@ -6,7 +6,7 @@
 //        com.unity.services.authentication / com.unity.services.relay
 //   2) Scripting Define Symbols に  UGS_NETCODE  を追加
 //   3) UGS プロジェクト連携(Project Settings > Services)＋ Relay 有効化
-// 詳細手順: Docs/Design/Networking_Design.md
+// 詳細手順: docs/Design/Networking_Design.md
 #if UGS_NETCODE
 using System;
 using System.Collections.Generic;
