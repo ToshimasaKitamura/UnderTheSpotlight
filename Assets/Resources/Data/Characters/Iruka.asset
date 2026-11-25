@@ -17,7 +17,7 @@ MonoBehaviour:
   role: 0
   description1: "\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u8AAC\u660E 1"
   description2: "\u30D0\u30C8\u30EB\u306E\u7279\u5FB4\u306A\u3069"
-  characterSprite: {fileID: 1700000001, guid: 9012345abcdef1112233445566778899, type: 3}
+  characterSprite: {fileID: 1700000001, guid: ff21b7453b2e5426e8c7f39264aae052, type: 3}
   themeColor: {r: 0.3, g: 0.7, b: 1, a: 1}
   initialDeck: []
   deckDescription: 

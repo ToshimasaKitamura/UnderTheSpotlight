@@ -29,7 +29,7 @@ public class MicroGameIMGUIHelper : MonoBehaviour
         pixelScale = Mathf.Max(3, Screen.height / 240);
     }
 
-    /// <summary>複数テキスト用の初期化（GroupButtonMicroGame等）</summary>
+    /// <summary>複数テキスト用の初期化(現在は使用箇所なし)</summary>
     public void Initialize(System.Func<string[]> multiTextGetter, Color[] colors)
     {
         getMultiTextFunc = multiTextGetter;

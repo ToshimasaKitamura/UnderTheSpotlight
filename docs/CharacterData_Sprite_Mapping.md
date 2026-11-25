@@ -83,7 +83,7 @@ find Assets/Data/Characters -name "*.asset" -exec grep -H "characterSprite:" {} 
 ### スプライトシートの確認
 
 ```bash
-grep "second: Player_" Assets/Images/Player.png.meta
+grep "second: Player_" Assets/Resources/Images/Player.png.meta
 ```
 
 ## Unity内での検証

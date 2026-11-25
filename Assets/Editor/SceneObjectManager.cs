@@ -152,10 +152,10 @@ public class SceneObjectManager : EditorWindow
     public static void FixPlayerSprites()
     {
         // Player.pngのスプライトをロード
-        var sprites = AssetDatabase.LoadAllAssetsAtPath("Assets/Images/Player.png");
+        var sprites = AssetDatabase.LoadAllAssetsAtPath("Assets/Resources/Images/Player.png");
         if (sprites == null || sprites.Length == 0)
         {
-            Debug.LogError("[FixPlayerSprites] Assets/Images/Player.png が見つかりません！");
+            Debug.LogError("[FixPlayerSprites] Assets/Resources/Images/Player.png が見つかりません！");
             return;
         }
 

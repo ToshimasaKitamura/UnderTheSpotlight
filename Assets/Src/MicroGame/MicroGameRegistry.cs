@@ -19,17 +19,6 @@ public class MicroGameRegistry
         names.Add(factory().DisplayName);
     }
 
-    /// <summary>既定のミニゲーム群を登録(増やすときはここに足す)。</summary>
-    public static MicroGameRegistry CreateDefault()
-    {
-        var r = new MicroGameRegistry();
-        r.Register(() => new MashMicroGame());
-        r.Register(() => new TimingMicroGame());
-        r.Register(() => new SequenceMicroGame());
-        r.Register(() => new HoldMicroGame());
-        return r;
-    }
-
     /// <summary>
     /// グループ型(全員で1回・リレー式)アクションコマンドの登録簿。ActionCommandPhase はここからランダムに選ぶ。
     /// 増やすときは GroupRelayMicroGame を継承したクラスを作り、ここに1行足す。
@@ -59,12 +48,4 @@ public class MicroGameRegistry
         return g;
     }
 
-    public IMicroGame CreateRandom(System.Random rng, out string displayName)
-    {
-        if (factories.Count == 0) { displayName = ""; return null; }
-        int i = rng.Next(factories.Count);
-        var g = factories[i]();
-        displayName = g.DisplayName;
-        return g;
-    }
 }
