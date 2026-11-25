@@ -33,10 +33,11 @@ public class NetworkLobbyPanel : MonoBehaviour
         if (NetworkLobby.Available) Lobby.Tick();
         if (_copiedFlash > 0f) _copiedFlash -= Time.deltaTime;
 
-        // N キーでもトグル(アイコンのクリックと併用)
+        // N キーでもトグル(アイコンのクリックと併用)。
+        // ただし参加コードの入力中は N も文字として打つので、トグルしない(コードに N を含むと閉じてしまうため)。
         var kb = UnityEngine.InputSystem.Keyboard.current;
-        if (kb != null && kb.nKey.wasPressedThisFrame)
-            _state = _state == PanelState.Closed ? PanelState.Menu : PanelState.Closed;
+        if (kb != null && kb.nKey.wasPressedThisFrame && _state != PanelState.Join)
+            TogglePanel();
 
         // アクティブなネット・ロビーの参加状況を下流(キャラ選択/バトル)へ反映
         if (NetworkLobby.Available && Lobby.Status == NetLobbyStatus.Active && GameSceneManager.Instance != null)
@@ -98,7 +99,18 @@ public class NetworkLobbyPanel : MonoBehaviour
 
         // クリック判定(透明ボタンを全面に重ねる)
         if (GUI.Button(r, GUIContent.none, GUIStyle.none))
-            _state = _state == PanelState.Closed ? PanelState.Menu : PanelState.Closed;
+            TogglePanel();
+    }
+
+    /// <summary>接続中・参加中ならメニューではなく今の部屋の画面を開く。</summary>
+    private bool LobbyBusy => NetworkLobby.Available &&
+        (Lobby.Status == NetLobbyStatus.Connecting || Lobby.Status == NetLobbyStatus.Active);
+
+    private void TogglePanel()
+    {
+        if (_state != PanelState.Closed) { _state = PanelState.Closed; return; }
+        if (LobbyBusy) _state = Lobby.Role == NetLobbyRole.Host ? PanelState.Host : PanelState.Join;
+        else _state = PanelState.Menu;
     }
 
     // ---- アイコン用テクスチャ生成(1回だけ) ----
@@ -207,15 +219,19 @@ public class NetworkLobbyPanel : MonoBehaviour
         float bx = box.x + 40f, bw = box.width - 80f;
         float by = box.y + 90f;
 
-        if (GUI.Button(new Rect(bx, by, bw, 56f), "部屋を建てる", _btn))
+        // 接続中・参加中は新しく建てる/入ることはできない(今の接続が壊れるため)
+        using (new GuiEnabled(!LobbyBusy))
         {
-            _state = PanelState.Host;
-            Lobby.HostRoom(4);
-        }
-        if (GUI.Button(new Rect(bx, by + 72f, bw, 56f), "部屋に入る", _btn))
-        {
-            _codeInput = string.Empty;
-            _state = PanelState.Join;
+            if (GUI.Button(new Rect(bx, by, bw, 56f), "部屋を建てる", _btn))
+            {
+                _state = PanelState.Host;
+                Lobby.HostRoom(4);
+            }
+            if (GUI.Button(new Rect(bx, by + 72f, bw, 56f), "部屋に入る", _btn))
+            {
+                _codeInput = string.Empty;
+                _state = PanelState.Join;
+            }
         }
         if (GUI.Button(new Rect(bx, by + 156f, bw, 44f), "閉じる", _btn))
             _state = PanelState.Closed;
@@ -284,8 +300,7 @@ public class NetworkLobbyPanel : MonoBehaviour
         _codeInput = _codeInput.Trim().ToUpperInvariant();
         y += 64f;
 
-        bool canJoin = !string.IsNullOrEmpty(_codeInput) &&
-                       Lobby.Status != NetLobbyStatus.Connecting;
+        bool canJoin = !string.IsNullOrEmpty(_codeInput) && !LobbyBusy;
         using (new GuiEnabled(canJoin))
         {
             if (GUI.Button(new Rect(cx, y, cw, 50f), "この コードで参加", _btn))
