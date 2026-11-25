@@ -272,11 +272,13 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
             while (!done)
             {
                 done = game.Tick(Time.deltaTime);
+                // 誰かの攻撃でボスを倒したら、残りのプレイヤーの手番は行わず即中断する
+                // (順次参加型の分岐と同じ挙動。撃破演出は BattleResultPhase が担当)
+                if (IsEnemyDefeated()) { enemyDefeated = true; break; }
                 yield return null;
             }
             game.Cleanup();
             RoundsPlayed = 1;
-            if (IsEnemyDefeated()) enemyDefeated = true;
         }
         else
         {
