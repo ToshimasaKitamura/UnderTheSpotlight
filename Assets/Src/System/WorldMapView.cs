@@ -11,6 +11,9 @@ using UnityEngine.UI;
 /// </summary>
 public class WorldMapView : MonoBehaviour
 {
+    // 描画のたびに使う飾り(枠・星・文字)。引数が同じなら使い回す(毎フレーム作って破棄しない)
+    private readonly TextureMemo frameTextures = new TextureMemo();
+
     // HUD の EXP / ボム数。値が変わったときだけ作り直す(毎フレーム生成しない)
     private readonly CachedTextTexture hudExpText = new CachedTextTexture();
     private readonly CachedTextTexture hudBombText = new CachedTextTexture();
@@ -864,29 +867,26 @@ public class WorldMapView : MonoBehaviour
         float barH = pixelScale * 4f;
         float barX = c.x - barW / 2f;
         float barY = c.y + nodeSize.y * 0.7f + pixelScale * 20f;
-        Texture2D barBg = PixelFontRenderer.CreatePixelBox((int)barW, (int)barH,
+        Texture2D barBg = frameTextures.Box((int)barW, (int)barH,
             new Color(0.02f, 0.02f, 0.05f, 0.9f), nodeSelectColor * 0.6f, 1);
         GUI.DrawTexture(new Rect(barX, barY, barW, barH), barBg);
-        Destroy(barBg);
         if (gatherProgress01 > 0f)
         {
-            Texture2D fill = PixelFontRenderer.CreatePixelBox(
+            Texture2D fill = frameTextures.Box(
                 Mathf.Max(1, (int)((barW - pixelScale * 2) * gatherProgress01)), (int)(barH - pixelScale * 2),
                 GameColorScheme.Accent, GameColorScheme.Accent, 0);
             GUI.DrawTexture(new Rect(barX + pixelScale, barY + pixelScale,
                 (barW - pixelScale * 2) * gatherProgress01, barH - pixelScale * 2), fill);
-            Destroy(fill);
         }
 
         // 残り秒数(3..2..1)
         int remain = Mathf.CeilToInt((1f - gatherProgress01) * 3f);
         remain = Mathf.Clamp(remain, 1, 3);
-        Texture2D numTex = PixelFontRenderer.RenderText(remain.ToString(), GameColorScheme.Accent, pixelScale + 2);
+        Texture2D numTex = frameTextures.Text(remain.ToString(), GameColorScheme.Accent, pixelScale + 2);
         if (numTex != null)
         {
             float ny = c.y - nodeSize.y * 0.7f - numTex.height - pixelScale * 6f;
             GUI.DrawTexture(new Rect(c.x - numTex.width / 2f, ny, numTex.width, numTex.height), numTex);
-            Destroy(numTex);
         }
     }
 
@@ -913,17 +913,15 @@ public class WorldMapView : MonoBehaviour
             Color bg = joined ? new Color(pcol.r * 0.22f, pcol.g * 0.22f, pcol.b * 0.22f, 0.95f)
                               : new Color(0.05f, 0.05f, 0.08f, 0.85f);
             int border = (p == lobbyActivePlayer) ? pixelScale * 2 : pixelScale;
-            Texture2D box = PixelFontRenderer.CreatePixelBox((int)slotW, (int)slotH, bg, frame, border);
+            Texture2D box = frameTextures.Box((int)slotW, (int)slotH, bg, frame, border);
             GUI.DrawTexture(new Rect(x, y, slotW, slotH), box);
-            Destroy(box);
 
             string label = $"P{p + 1} " + (joined ? "IN" : "---");
             Color txtCol = joined ? pcol : new Color(0.6f, 0.6f, 0.68f, 1f);
-            Texture2D t = PixelFontRenderer.RenderText(label, txtCol, pixelScale);
+            Texture2D t = frameTextures.Text(label, txtCol, pixelScale);
             if (t != null)
             {
                 GUI.DrawTexture(new Rect(x + (slotW - t.width) / 2f, y + (slotH - t.height) / 2f, t.width, t.height), t);
-                Destroy(t);
             }
         }
     }
@@ -1209,7 +1207,7 @@ public class WorldMapView : MonoBehaviour
             GUI.DrawTexture(new Rect(x - w / 2f, y - h / 2f, w, h), tex);
 
             // ステージ番号
-            Texture2D numTex = PixelFontRenderer.RenderText((i + 1).ToString(),
+            Texture2D numTex = frameTextures.Text((i + 1).ToString(),
                 isSelected ? nodeSelectColor : textColor, pixelScale);
             if (numTex != null)
             {
@@ -1230,7 +1228,7 @@ public class WorldMapView : MonoBehaviour
 
                     // 名前の背景
                     float bgPadding = pixelScale * 2;
-                    Texture2D nameBg = PixelFontRenderer.CreatePixelBox(
+                    Texture2D nameBg = frameTextures.Box(
                         (int)(nameTex.width + bgPadding * 2),
                         (int)(nameTex.height + bgPadding * 2),
                         new Color(0.02f, 0.02f, 0.05f, 0.85f),
@@ -1240,7 +1238,6 @@ public class WorldMapView : MonoBehaviour
                         nameY - bgPadding,
                         nameTex.width + bgPadding * 2,
                         nameTex.height + bgPadding * 2), nameBg);
-                    Destroy(nameBg);
 
                     GUI.DrawTexture(new Rect(
                         x - nameTex.width / 2f,
@@ -1253,7 +1250,7 @@ public class WorldMapView : MonoBehaviour
             // クリア済みマーク（星マーク）
             if (node.cleared)
             {
-                Texture2D clearStar = PixelFontRenderer.CreatePixelStar(pixelScale * 8, nodeClearColor);
+                Texture2D clearStar = frameTextures.Star(pixelScale * 8, nodeClearColor);
                 if (clearStar != null)
                 {
                     // 回転アニメーション風の脈動
@@ -1264,7 +1261,6 @@ public class WorldMapView : MonoBehaviour
                         x + tex.width / 2f - sw / 2f,
                         y - tex.height / 2f - sh / 2f,
                         sw, sh), clearStar);
-                    Destroy(clearStar);
                 }
             }
         }
@@ -1280,7 +1276,7 @@ public class WorldMapView : MonoBehaviour
         // ヘッダー背景（豪華に）
         float bgWidth = headerTexture.width + pixelScale * 24;
         float bgHeight = headerTexture.height + pixelScale * 12;
-        Texture2D headerBg = PixelFontRenderer.CreatePixelBox(
+        Texture2D headerBg = frameTextures.Box(
             (int)bgWidth, (int)bgHeight,
             new Color(0.02f, 0.02f, 0.05f, 0.9f),
             headerColor, pixelScale);
@@ -1290,13 +1286,12 @@ public class WorldMapView : MonoBehaviour
         GUI.DrawTexture(new Rect(bgX, bgY, bgWidth, bgHeight), headerBg);
 
         // 内側の装飾ライン
-        Texture2D innerLine = PixelFontRenderer.CreatePixelBox(
+        Texture2D innerLine = frameTextures.Box(
             (int)(bgWidth - pixelScale * 8), (int)(bgHeight - pixelScale * 6),
             Color.clear, headerColor * 0.4f, 1);
         GUI.DrawTexture(new Rect(
             bgX + pixelScale * 4, bgY + pixelScale * 3,
             bgWidth - pixelScale * 8, bgHeight - pixelScale * 6), innerLine);
-        Destroy(innerLine);
 
         // タイトルに揺れアニメーション
         float bobX = Mathf.Sin(blinkTimer * 1.5f) * pixelScale;
@@ -1314,7 +1309,6 @@ public class WorldMapView : MonoBehaviour
             GUI.color = c;
         }
 
-        Destroy(headerBg);
     }
 
     private void DrawHUD()
@@ -1327,28 +1321,25 @@ public class WorldMapView : MonoBehaviour
         // HUD背景（より装飾的に）
         int hudW = 180;
         int hudH = 70;
-        Texture2D hud = PixelFontRenderer.CreatePixelBox(
+        Texture2D hud = frameTextures.Box(
             hudW, hudH,
             new Color(0.03f, 0.03f, 0.08f, 0.92f),
             new Color(0.4f, 0.5f, 0.7f), pixelScale);
         GUI.DrawTexture(new Rect(x, y, hudW, hudH), hud);
-        Destroy(hud);
 
         // 内側装飾
-        Texture2D hudInner = PixelFontRenderer.CreatePixelBox(
+        Texture2D hudInner = frameTextures.Box(
             hudW - pixelScale * 6, hudH - pixelScale * 6,
             Color.clear, new Color(0.3f, 0.35f, 0.5f, 0.5f), 1);
         GUI.DrawTexture(new Rect(x + pixelScale * 3, y + pixelScale * 3, hudW - pixelScale * 6, hudH - pixelScale * 6), hudInner);
-        Destroy(hudInner);
 
         // ラベル（アイコン風）
         float labelX = x + pixelScale * 6;
         float labelY = y + pixelScale * 8;
 
         // EXP
-        Texture2D expIcon = PixelFontRenderer.CreatePixelStar(pixelScale * 6, new Color(0.4f, 0.7f, 1f));
+        Texture2D expIcon = frameTextures.Star(pixelScale * 6, new Color(0.4f, 0.7f, 1f));
         GUI.DrawTexture(new Rect(labelX, labelY, expIcon.width, expIcon.height), expIcon);
-        Destroy(expIcon);
 
         Texture2D expTex = hudExpText.Get($"{runProgress.accumulatedExp}", new Color(0.6f, 0.85f, 1f), pixelScale);
         if (expTex != null)
@@ -1360,9 +1351,8 @@ public class WorldMapView : MonoBehaviour
 
         // BOMB
         float bombY = labelY + pixelScale * 12;
-        Texture2D bombIcon = PixelFontRenderer.CreatePixelStar(pixelScale * 6, new Color(1f, 0.6f, 0.3f));
+        Texture2D bombIcon = frameTextures.Star(pixelScale * 6, new Color(1f, 0.6f, 0.3f));
         GUI.DrawTexture(new Rect(labelX, bombY, bombIcon.width, bombIcon.height), bombIcon);
-        Destroy(bombIcon);
 
         Texture2D bombTex = hudBombText.Get($"+{runProgress.accumulatedBombs}", new Color(1f, 0.8f, 0.5f), pixelScale);
         if (bombTex != null)
@@ -1382,7 +1372,7 @@ public class WorldMapView : MonoBehaviour
 
         // 背景
         float bgPad = pixelScale * 3;
-        Texture2D hintBg = PixelFontRenderer.CreatePixelBox(
+        Texture2D hintBg = frameTextures.Box(
             (int)(controlHintTexture.width + bgPad * 2),
             (int)(controlHintTexture.height + bgPad * 2),
             new Color(0.02f, 0.02f, 0.05f, 0.8f),
@@ -1390,7 +1380,6 @@ public class WorldMapView : MonoBehaviour
         GUI.DrawTexture(new Rect(x - bgPad, y - bgPad,
             controlHintTexture.width + bgPad * 2,
             controlHintTexture.height + bgPad * 2), hintBg);
-        Destroy(hintBg);
 
         GUI.DrawTexture(new Rect(x, y, controlHintTexture.width, controlHintTexture.height), controlHintTexture);
     }
@@ -1400,6 +1389,7 @@ public class WorldMapView : MonoBehaviour
         Clear();
         hudExpText.Dispose();
         hudBombText.Dispose();
+        frameTextures.Dispose();
     }
 
     private class NodeUi
