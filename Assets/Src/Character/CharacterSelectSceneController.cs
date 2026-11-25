@@ -503,14 +503,15 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
             charData.description2 = c.desc2;
             charData.themeColor = c.color;
 
-            // Player.pngスプライトシートから該当スプライトを取得
-            if (playerSprites != null && c.spriteIndex < playerSprites.Length)
+            // Player.png スプライトシートから「Player_{spriteIndex}」を名前で取得
+            var sprite = FindPlayerSprite(playerSprites, c.spriteIndex);
+            if (sprite != null)
             {
-                charData.characterSprite = playerSprites[c.spriteIndex];
+                charData.characterSprite = sprite;
             }
             else
             {
-                Debug.LogWarning($"Sprite not found for {c.name} at index {c.spriteIndex}");
+                Debug.LogError($"[CharacterSelect] {c.name} のスプライト 'Player_{c.spriteIndex}' が Resources/{PlayerSheetPath} にありません。仮画像で表示します。");
                 charData.characterSprite = CreatePlaceholderSprite(c.color);
             }
 
@@ -518,22 +519,29 @@ private const float INPUT_COOLDOWN_TIME = 0.15f;
         }
     }
 
+    /// <summary>
+    /// キャラ画像のスプライトシート(Resources/Images/Player)を読み込む。エディタでも製品ビルドでも同じ経路。
+    /// 以前は UnityEditor.AssetDatabase で読んでいたため、製品ビルドでは全キャラが仮画像になっていた。
+    /// </summary>
     private Sprite[] LoadPlayerSprites()
     {
-        #if UNITY_EDITOR
-        // エディタではAssetDatabaseから直接ロード
-        Texture2D playerTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Images/Player.png");
-        if (playerTexture != null)
+        var sprites = Resources.LoadAll<Sprite>(PlayerSheetPath);
+        if (sprites == null || sprites.Length == 0)
         {
-            string path = UnityEditor.AssetDatabase.GetAssetPath(playerTexture);
-            Sprite[] sprites = UnityEditor.AssetDatabase.LoadAllAssetsAtPath(path)
-                .OfType<Sprite>()
-                .OrderBy(s => s.name)
-                .ToArray();
-            return sprites;
+            Debug.LogError($"[CharacterSelect] Resources/{PlayerSheetPath} からスプライトを読み込めません。Assets/Resources/Images/Player.png が Sprite(Multiple) としてインポートされているか確認してください。");
+            return null;
         }
-        #endif
+        return sprites;
+    }
 
+    private const string PlayerSheetPath = "Images/Player";
+
+    /// <summary>シートから「Player_{index}」という名前のスプライトを探す(読み込み順に依存しない)。</summary>
+    private static Sprite FindPlayerSprite(Sprite[] sprites, int index)
+    {
+        if (sprites == null) return null;
+        string target = $"Player_{index}";
+        foreach (var sp in sprites) if (sp != null && sp.name == target) return sp;
         return null;
     }
 
