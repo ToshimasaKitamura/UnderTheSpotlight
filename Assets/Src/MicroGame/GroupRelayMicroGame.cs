@@ -55,6 +55,7 @@ public abstract class GroupRelayMicroGame : IMicroGame
     private const float SwitchDur = 0.26f;
     private int switchFrom, switchTo;
     private bool finished;
+    private int hitCount; // この回で命中した人数(Succeeded の判定に使う)
 
     // ================= ライフサイクル =================
 
@@ -84,6 +85,7 @@ public abstract class GroupRelayMicroGame : IMicroGame
         switching = false;
         finished = false;
         Succeeded = false;
+        hitCount = 0;
 
         OnSetup(c);
 
@@ -211,6 +213,7 @@ public abstract class GroupRelayMicroGame : IMicroGame
         int i = Current;
         if (hit)
         {
+            hitCount++;
             SetAttackSource(i);              // ダメージ光の始点=この領域の末端
             Ctx.OnPlayerAttack?.Invoke(i);   // このプレイヤーの攻撃命中
         }
@@ -228,7 +231,7 @@ public abstract class GroupRelayMicroGame : IMicroGame
         // 次がいなければ終了
         if (to >= PlayerCount)
         {
-            Succeeded = true;
+            Succeeded = hitCount > 0; // 1人でも命中したら成功(全員外したら失敗)
             finished = true;
             return;
         }
