@@ -7,9 +7,9 @@
 
 | 要素 | 実装 |
 |---|---|
-| 弾の実体 | [`Bullet`](../../Assets/Src/Utils/Bullet.cs)（`velocity`/`radius`/`kind`/`healAmount`） |
-| 弾の大きさ・形状 | [`BulletSize`](../../Assets/Src/Utils/Bullet.cs)（Small/Medium/Large）・[`BulletShape`](../../Assets/Src/Utils/Bullet.cs)（Round/Kunai） |
-| 弾の生成・衝突・回復弾処理・見た目 | [`DanmakuManager`](../../Assets/Src/Utils/DanmakuManager.cs)（`SpawnBullet(pos,vel,kind,size,shape)`） |
+| 弾の実体 | [`Bullet`](../../Assets/Src/Dodge/Bullet.cs)（`velocity`/`radius`/`kind`/`healAmount`） |
+| 弾の大きさ・形状 | [`BulletSize`](../../Assets/Src/Dodge/Bullet.cs)（Small/Medium/Large）・[`BulletShape`](../../Assets/Src/Dodge/Bullet.cs)（Round/Kunai） |
+| 弾の生成・衝突・回復弾処理・見た目 | [`DanmakuManager`](../../Assets/Src/Dodge/DanmakuManager.cs)（`SpawnBullet(pos,vel,kind,size,shape)`） |
 | ボスの弾幕パターン | [`BossDanmakuPattern`](../../Assets/Src/Enemy/BossDanmakuPattern.cs) |
 | 狙い方 | [`DanmakuAim`](../../Assets/Src/Enemy/BossDanmakuPattern.cs)（Aimed/AntiAim/FixedDown） |
 | 時間変化フェーズ | [`DanmakuPhase`](../../Assets/Src/Enemy/BossDanmakuPattern.cs) ＋ [`EnemyData`](../../Assets/Src/Enemy/EnemyData.cs) の `danmakuPhases` |
@@ -92,7 +92,7 @@
 
 ## 弾種（BulletKind）
 
-基本は白黒。攻撃の用途によって見た目と挙動を変える（[`BulletKind`](../../Assets/Src/Utils/Bullet.cs)）。
+基本は白黒。攻撃の用途によって見た目と挙動を変える（[`BulletKind`](../../Assets/Src/Dodge/Bullet.cs)）。
 
 | 種別 | 色 | 挙動 | 用途 |
 |---|---|---|---|

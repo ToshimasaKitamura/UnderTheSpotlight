@@ -28,7 +28,7 @@
 ### 参加人数とパーティの決定（キャラクター選択 → バトル）
 
 - バトルの実効人数とキャラは**キャラクター選択の結果**（`GameSceneManager.selectedParty[4]`、非参加=null）から決まる。
-- 単一ソース `BattleParty`（`Assets/Src/Utils/BattleParty.cs`）が参加者を**前詰め**した配列と実効人数 n を提供し、各フェーズの `playerCount` はこれに従う（参加者0＝キャラ選択を経ない直接再生/デバッグ時のみ `GameTuning.playerCount` にフォールバック）。
+- 単一ソース `BattleParty`（`Assets/Src/Battle/BattleParty.cs`）が参加者を**前詰め**した配列と実効人数 n を提供し、各フェーズの `playerCount` はこれに従う（参加者0＝キャラ選択を経ない直接再生/デバッグ時のみ `GameTuning.playerCount` にフォールバック）。
 - `BattleStateMachine.ApplySelectedParty()`（`Start` 内、BossIntro 前）が反映する: 先頭 n 人の `playerTransforms` に選択キャラの `characterSprite` を適用し、**n 人目以降の playerTransforms を非表示（＝空席）**、`PartyDeckController.InitializeFromCharacters(party)` でデッキを初期化。
 - 空席は非アクティブなので `FindGameObjectsWithTag("Player")` から外れ、`ConfigureForPlayerCount(n)` が自動で効く。
 
