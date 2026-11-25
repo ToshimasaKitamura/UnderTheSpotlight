@@ -518,8 +518,8 @@ public class BattleStateMachine : MonoBehaviour
 
     private void Update()
     {
-        // バトル中はいつでも Esc でデバッグ室へ入れる(通常プレイからでも可)
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        // 【デバッグ】バトル中はいつでも Esc でデバッグ室へ入れる。製品ビルドでは無効(DebugFeatures)。
+        if (DebugFeatures.Enabled && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             Time.timeScale = 1f;
             DebugLaunch.Clear();

@@ -32,6 +32,8 @@ public class BattleDebugPanel : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Bootstrap()
     {
+        // 製品ビルドではデバッグ表示を作らない(D キーも反応させない)
+        if (!DebugFeatures.Enabled) return;
         if (instance != null) return;
         var go = new GameObject("[BattleDebugPanel]");
         instance = go.AddComponent<BattleDebugPanel>();

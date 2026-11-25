@@ -323,7 +323,7 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
             }
             currentHand = new List<CardInstance>(drawn);
 
-            // 【デバッグ】即死カードを必ず手札の先頭に入れる(不要になったら ForceDebugInstantKillCard を false に)
+            // 【デバッグ】即死カードを必ず手札の先頭に入れる(製品ビルドでは入らない)
             if (ForceDebugInstantKillCard) EnsureDebugInstantKillInHand(currentHand);
 
             // カードをズーム後カメラの画面右へ生成
@@ -827,8 +827,8 @@ public class CardSelectPhase : MonoBehaviour, IBattlePhase
         }
     }
 
-    // 【デバッグ】毎手札の先頭に即死カードを必ず入れるか。製品では false にする。
-    private const bool ForceDebugInstantKillCard = true;
+    // 【デバッグ】毎手札の先頭に即死カードを必ず入れるか。エディタ/Development Build のみ有効(DebugFeatures)。
+    private static bool ForceDebugInstantKillCard => DebugFeatures.Enabled;
     private static CardData _debugInstantKillData;
 
     /// <summary>デバッグ用の即死カードを手札の先頭に差し込む(枚数は維持)。</summary>

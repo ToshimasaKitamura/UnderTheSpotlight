@@ -211,6 +211,7 @@ public class WorldMapSceneController : MonoBehaviour
     /// </summary>
     private static int ReadDebugPlayerCountHeld()
     {
+        if (!DebugFeatures.Enabled) return 0; // 製品ビルドでは募集状況を上書きしない
         var kb = Keyboard.current;
         if (kb == null) return 0;
         if (kb.digit4Key.isPressed || kb.numpad4Key.isPressed) return 4;
