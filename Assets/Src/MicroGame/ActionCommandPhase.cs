@@ -392,9 +392,17 @@ public class ActionCommandPhase : MonoBehaviour, IBattlePhase
     private void HandlePlayerAttack(int playerIndex)
     {
         var selections = cardSelectPhase != null ? cardSelectPhase.Selections : null;
-        if (selections == null || playerIndex < 0 || playerIndex >= selections.Count) return;
+        if (selections == null || playerIndex < 0 || playerIndex >= selections.Count)
+        {
+            Debug.LogError($"[ActionCommandPhase] P{playerIndex + 1} が命中しましたが、カード選択の結果がありません(selections={(selections == null ? "null" : selections.Count.ToString())} 件)。攻撃を適用できません。CardSelectPhase を経由して起動しているか確認してください。");
+            return;
+        }
         var card = selections[playerIndex];
-        if (card == null || card.Data == null) return;
+        if (card == null || card.Data == null)
+        {
+            Debug.LogError($"[ActionCommandPhase] P{playerIndex + 1} の選択カードが null です(カードデータ未設定)。攻撃を適用できません。");
+            return;
+        }
 
         if (perPlayerSuccess != null && playerIndex < perPlayerSuccess.Length)
             perPlayerSuccess[playerIndex]++;
